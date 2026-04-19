@@ -168,6 +168,7 @@
       if (!collides(rotated, current.x + kick, current.y)) {
         current.shape = rotated;
         current.x += kick;
+        window.GameAudio && GameAudio.sfxRotate();
         return;
       }
     }
@@ -177,6 +178,7 @@
     if (!current) return;
     if (!collides(current.shape, current.x + dx, current.y)) {
       current.x += dx;
+      window.GameAudio && GameAudio.sfxMove();
     }
   }
 
@@ -220,12 +222,19 @@
       const pts = [0, 40, 100, 300, 1200][full.length] * level;
       score += Math.round(pts * cfg.scoreMult);
       lines += full.length;
-      if (lines >= level * cfg.linesPerLevel) {
+      const leveledUp = lines >= level * cfg.linesPerLevel;
+      if (leveledUp) {
         level += 1;
         dropInterval = Math.max(cfg.minSpeed, cfg.startSpeed - (level - 1) * cfg.speedup);
       }
       boardFrame.classList.add('flashing');
+      if (window.GameAudio) {
+        if (full.length >= 4) GameAudio.sfxTetris();
+        else GameAudio.sfxLine();
+        if (leveledUp) GameAudio.sfxLevelUp();
+      }
     } else {
+      window.GameAudio && GameAudio.sfxLock();
       spawn();
     }
     updateHud();
@@ -262,6 +271,10 @@
     overlayTitle.textContent = 'GAME OVER';
     overlaySub.textContent = 'PRESS R TO CHANGE MODE';
     overlay.classList.remove('hidden');
+    if (window.GameAudio) {
+      GameAudio.stopMusic();
+      GameAudio.sfxGameOver();
+    }
   }
 
   function restart() {
@@ -290,6 +303,7 @@
     difficulty = d;
     startOverlay.classList.add('hidden');
     restart();
+    window.GameAudio && GameAudio.startMusic();
   }
 
   function showStartScreen() {
@@ -298,6 +312,7 @@
     gameOver = false;
     overlay.classList.add('hidden');
     startOverlay.classList.remove('hidden');
+    window.GameAudio && GameAudio.stopMusic();
   }
 
   function togglePause() {
@@ -307,8 +322,10 @@
       overlayTitle.textContent = 'PAUSED';
       overlaySub.textContent = 'PRESS P TO RESUME';
       overlay.classList.remove('hidden');
+      window.GameAudio && GameAudio.stopMusic();
     } else {
       overlay.classList.add('hidden');
+      window.GameAudio && GameAudio.startMusic();
     }
   }
 
@@ -606,8 +623,18 @@
     requestAnimationFrame(loop);
   }
 
+  const muteLabelEl = document.getElementById('mute-label');
+  function refreshMuteLabel() {
+    if (!muteLabelEl || !window.GameAudio) return;
+    muteLabelEl.textContent = GameAudio.isMuted() ? 'UNMUTE' : 'MUTE';
+  }
+
   // ---- input ----
   document.addEventListener('keydown', (e) => {
+    if (e.key === 'm' || e.key === 'M') {
+      if (window.GameAudio) { GameAudio.toggleMute(); refreshMuteLabel(); }
+      return;
+    }
     if (gameOver) {
       if (e.key === 'r' || e.key === 'R') showStartScreen();
       return;
