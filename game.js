@@ -105,6 +105,10 @@
   let gameOver = false;
   let lineClearTimer = 0;
   let clearingRows = [];
+  let hardDropping = false;
+  let hardDropTargetY = 0;
+  let hardDropAccum = 0;
+  const HARD_DROP_MS_PER_CELL = 6; // ~167 cells/sec; ~120ms for a full-board drop
 
   function createGrid() {
     return Array.from({ length: ROWS }, () => Array(COLS).fill(null));
@@ -195,15 +199,37 @@
   }
 
   function hardDrop() {
-    if (!current) return;
+    if (!current || hardDropping) return;
     let dist = 0;
-    while (!collides(current.shape, current.x, current.y + 1)) {
-      current.y += 1;
+    let probeY = current.y;
+    while (!collides(current.shape, current.x, probeY + 1)) {
+      probeY++;
       dist++;
     }
-    score += dist * 2;
+    if (dist === 0) {
+      // already resting; just lock
+      lockPiece();
+      return;
+    }
+    hardDropTargetY = probeY;
+    hardDropAccum = 0;
+    hardDropping = true;
+    score += dist * 2; // commit score immediately; animation just visualizes the descent
     updateHud();
-    lockPiece();
+  }
+
+  function stepHardDrop(delta) {
+    if (!hardDropping || !current) return;
+    hardDropAccum += delta;
+    while (hardDropAccum >= HARD_DROP_MS_PER_CELL && current.y < hardDropTargetY) {
+      current.y += 1;
+      hardDropAccum -= HARD_DROP_MS_PER_CELL;
+    }
+    if (current.y >= hardDropTargetY) {
+      hardDropping = false;
+      hardDropAccum = 0;
+      lockPiece();
+    }
   }
 
   function lockPiece() {
@@ -288,6 +314,8 @@
     dropCounter = 0;
     clearingRows = [];
     lineClearTimer = 0;
+    hardDropping = false;
+    hardDropAccum = 0;
     running = true;
     paused = false;
     gameOver = false;
@@ -566,7 +594,7 @@
 
     // ghost and current
     if (current && !clearingRows.length) {
-      drawGhost();
+      if (!hardDropping) drawGhost();
       for (let r = 0; r < current.shape.length; r++) {
         for (let c = 0; c < current.shape[r].length; c++) {
           if (current.shape[r][c]) {
@@ -604,6 +632,9 @@
         if (lineClearTimer <= 0) {
           finishLineClears();
         }
+      } else if (hardDropping) {
+        stepHardDrop(delta);
+        dropCounter = 0;
       } else {
         dropCounter += delta;
         if (dropCounter > dropInterval) {
@@ -623,18 +654,29 @@
     requestAnimationFrame(loop);
   }
 
-  const muteLabelEl = document.getElementById('mute-label');
-  function refreshMuteLabel() {
-    if (!muteLabelEl || !window.GameAudio) return;
-    muteLabelEl.textContent = GameAudio.isMuted() ? 'UNMUTE' : 'MUTE';
+  const musicLabelEl = document.getElementById('music-label');
+  const sfxLabelEl = document.getElementById('sfx-label');
+  function refreshAudioLabels() {
+    if (!window.GameAudio) return;
+    if (musicLabelEl) musicLabelEl.textContent = GameAudio.isMusicEnabled() ? 'MUSIC ON' : 'MUSIC OFF';
+    if (sfxLabelEl) sfxLabelEl.textContent = GameAudio.isSfxEnabled() ? 'SFX ON' : 'SFX OFF';
+  }
+
+  function toggleMusicPref() {
+    if (!window.GameAudio) return;
+    GameAudio.toggleMusic();
+    refreshAudioLabels();
+  }
+  function toggleSfxPref() {
+    if (!window.GameAudio) return;
+    GameAudio.toggleSfx();
+    refreshAudioLabels();
   }
 
   // ---- input ----
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'm' || e.key === 'M') {
-      if (window.GameAudio) { GameAudio.toggleMute(); refreshMuteLabel(); }
-      return;
-    }
+    if (e.key === 'm' || e.key === 'M') { toggleMusicPref(); return; }
+    if (e.key === 'n' || e.key === 'N') { toggleSfxPref(); return; }
     if (gameOver) {
       if (e.key === 'r' || e.key === 'R') showStartScreen();
       return;
@@ -643,7 +685,7 @@
       togglePause();
       return;
     }
-    if (paused || lineClearTimer > 0) return;
+    if (paused || lineClearTimer > 0 || hardDropping) return;
 
     switch (e.key) {
       case 'ArrowLeft': move(-1); break;
@@ -657,6 +699,10 @@
   document.querySelectorAll('.diff-btn').forEach((btn) => {
     btn.addEventListener('click', () => chooseDifficulty(btn.dataset.diff));
   });
+  const musicToggleEl = document.getElementById('music-toggle');
+  const sfxToggleEl = document.getElementById('sfx-toggle');
+  if (musicToggleEl) musicToggleEl.addEventListener('click', toggleMusicPref);
+  if (sfxToggleEl) sfxToggleEl.addEventListener('click', toggleSfxPref);
 
   // boot — show start screen, let player pick difficulty before starting
   updateHud();

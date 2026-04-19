@@ -2,12 +2,15 @@
 // No external files — every sound is generated on the fly with oscillators.
 (() => {
   let ctx = null;
-  let masterGain = null;
-  let muted = false;
+  let musicGain = null;
+  let sfxGain = null;
+  let musicEnabled = true;
+  let sfxEnabled = true;
   let musicTimer = null;
   let musicStep = 0;
   let musicStartTime = 0;
   let playing = false;
+  let gameRunning = false; // whether the caller considers the game active
 
   // Frequencies (Hz) for a small chromatic set, keyed by note + octave.
   const N = (() => {
@@ -54,13 +57,16 @@
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return null;
     ctx = new AC();
-    masterGain = ctx.createGain();
-    masterGain.gain.value = muted ? 0 : 0.18;
-    masterGain.connect(ctx.destination);
+    musicGain = ctx.createGain();
+    musicGain.gain.value = musicEnabled ? 0.18 : 0;
+    musicGain.connect(ctx.destination);
+    sfxGain = ctx.createGain();
+    sfxGain.gain.value = sfxEnabled ? 0.22 : 0;
+    sfxGain.connect(ctx.destination);
     return ctx;
   }
 
-  function playTone(freq, start, duration, type = 'square', gain = 0.25) {
+  function playTone(freq, start, duration, type, gain, bus) {
     if (!freq || !ctx) return;
     const osc = ctx.createOscillator();
     const g = ctx.createGain();
@@ -71,7 +77,7 @@
     g.gain.exponentialRampToValueAtTime(gain, start + 0.005);
     g.gain.exponentialRampToValueAtTime(0.0001, start + duration);
     osc.connect(g);
-    g.connect(masterGain);
+    g.connect(bus);
     osc.start(start);
     osc.stop(start + duration + 0.02);
   }
@@ -83,13 +89,15 @@
     while (musicStartTime + musicStep * STEP_SEC < now + scheduleAheadSec) {
       const t = musicStartTime + musicStep * STEP_SEC;
       const [mel, bass] = PATTERN[musicStep % PATTERN.length];
-      playTone(N[mel], t, STEP_SEC * 0.9, 'square', 0.14);
-      playTone(N[bass], t, STEP_SEC * 1.8, 'triangle', 0.22);
+      playTone(N[mel], t, STEP_SEC * 0.9, 'square', 0.14, musicGain);
+      playTone(N[bass], t, STEP_SEC * 1.8, 'triangle', 0.22, musicGain);
       musicStep++;
     }
   }
 
   function startMusic() {
+    gameRunning = true;
+    if (!musicEnabled) return;
     if (!ensureContext()) return;
     if (ctx.state === 'suspended') ctx.resume();
     if (playing) return;
@@ -101,6 +109,11 @@
   }
 
   function stopMusic() {
+    gameRunning = false;
+    haltMusic();
+  }
+
+  function haltMusic() {
     playing = false;
     if (musicTimer) {
       clearInterval(musicTimer);
@@ -108,25 +121,33 @@
     }
   }
 
-  function setMuted(m) {
-    muted = m;
-    if (masterGain) {
-      masterGain.gain.setTargetAtTime(muted ? 0 : 0.18, ctx.currentTime, 0.02);
+  function setMusicEnabled(v) {
+    musicEnabled = !!v;
+    if (musicGain) {
+      musicGain.gain.setTargetAtTime(musicEnabled ? 0.18 : 0, ctx.currentTime, 0.02);
+    }
+    if (musicEnabled && gameRunning && !playing) startMusic();
+    else if (!musicEnabled) haltMusic();
+  }
+
+  function setSfxEnabled(v) {
+    sfxEnabled = !!v;
+    if (sfxGain) {
+      sfxGain.gain.setTargetAtTime(sfxEnabled ? 0.22 : 0, ctx.currentTime, 0.02);
     }
   }
 
-  function toggleMute() {
-    setMuted(!muted);
-    return muted;
-  }
+  function toggleMusic() { setMusicEnabled(!musicEnabled); return musicEnabled; }
+  function toggleSfx()   { setSfxEnabled(!sfxEnabled); return sfxEnabled; }
 
   // --- SFX ---
   function sfx(notes, type = 'square', gain = 0.3) {
+    if (!sfxEnabled) return;
     if (!ensureContext()) return;
     if (ctx.state === 'suspended') ctx.resume();
     let t = ctx.currentTime;
     for (const [freq, dur] of notes) {
-      playTone(freq, t, dur, type, gain);
+      playTone(freq, t, dur, type, gain, sfxGain);
       t += dur;
     }
   }
@@ -142,9 +163,12 @@
   window.GameAudio = {
     startMusic,
     stopMusic,
-    setMuted,
-    toggleMute,
-    isMuted: () => muted,
+    setMusicEnabled,
+    setSfxEnabled,
+    toggleMusic,
+    toggleSfx,
+    isMusicEnabled: () => musicEnabled,
+    isSfxEnabled: () => sfxEnabled,
     sfxMove, sfxRotate, sfxLock, sfxLine, sfxTetris, sfxLevelUp, sfxGameOver,
   };
 })();

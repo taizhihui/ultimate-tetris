@@ -315,6 +315,8 @@ body {
   margin-bottom: 6px;
 }
 .ctrl-row:last-child { margin-bottom: 0; }
+.ctrl-row.ctrl-toggle { cursor: pointer; }
+.ctrl-row.ctrl-toggle:hover span:last-child { color: #fcd000; }
 .key {
   background: #fff;
   color: #000;
