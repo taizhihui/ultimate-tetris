@@ -109,6 +109,8 @@
   let hardDropTargetY = 0;
   let hardDropAccum = 0;
   const HARD_DROP_MS_PER_CELL = 6; // ~167 cells/sec; ~120ms for a full-board drop
+  let celebrationTimer = 0;
+  const CELEBRATION_MS = 2600;
 
   function createGrid() {
     return Array.from({ length: ROWS }, () => Array(COLS).fill(null));
@@ -259,6 +261,7 @@
         else GameAudio.sfxLine();
         if (leveledUp) GameAudio.sfxLevelUp();
       }
+      if (full.length >= 4) celebrationTimer = CELEBRATION_MS;
     } else {
       window.GameAudio && GameAudio.sfxLock();
       spawn();
@@ -316,6 +319,7 @@
     lineClearTimer = 0;
     hardDropping = false;
     hardDropAccum = 0;
+    celebrationTimer = 0;
     running = true;
     paused = false;
     gameOver = false;
@@ -603,6 +607,123 @@
         }
       }
     }
+
+    if (celebrationTimer > 0) drawCelebration();
+  }
+
+  // Procedurally paints a blocky Mario sprite centered at (cx, cy).
+  function drawMario(cx, cy, scale = 1, flipX = false) {
+    const S = scale;
+    ctx.save();
+    ctx.translate(cx, cy);
+    if (flipX) ctx.scale(-1, 1);
+    const box = (x, y, w, h, color) => { ctx.fillStyle = color; ctx.fillRect(x * S, y * S, w * S, h * S); };
+    // cap (red)
+    box(-10, -30, 20, 4, '#e40000');
+    box(-14, -26, 28, 6, '#e40000');
+    // cap brim shadow
+    box(-14, -20, 28, 2, '#a00000');
+    // hair / sideburns (brown)
+    box(-14, -20, 4, 6, '#6e2800');
+    box(10, -20, 4, 6, '#6e2800');
+    // face
+    box(-10, -20, 20, 14, '#fcc48c');
+    // eyes (whites + pupils)
+    box(-6, -16, 4, 6, '#ffffff');
+    box(2, -16, 4, 6, '#ffffff');
+    box(-4, -14, 2, 4, '#000000');
+    box(4, -14, 2, 4, '#000000');
+    // nose
+    box(-2, -10, 6, 4, '#fcc48c');
+    box(-2, -8, 6, 2, '#e89060');
+    // mustache
+    box(-8, -8, 16, 3, '#3a1c00');
+    box(-10, -7, 4, 2, '#3a1c00');
+    box(6, -7, 4, 2, '#3a1c00');
+    // neck
+    box(-6, -6, 12, 2, '#fcc48c');
+    // shirt (red sleeves visible at shoulders)
+    box(-14, -4, 6, 12, '#e40000');
+    box(8, -4, 6, 12, '#e40000');
+    // overalls (blue torso)
+    box(-8, -4, 16, 14, '#0058f8');
+    // strap separators
+    box(-6, -4, 2, 10, '#003cbf');
+    box(4, -4, 2, 10, '#003cbf');
+    // overall buttons
+    box(-5, 0, 3, 3, '#fcd000');
+    box(2, 0, 3, 3, '#fcd000');
+    // gloves
+    box(-16, 8, 6, 4, '#ffffff');
+    box(10, 8, 6, 4, '#ffffff');
+    // shoes
+    box(-12, 10, 10, 6, '#6e2800');
+    box(2, 10, 10, 6, '#6e2800');
+    // shoe highlight
+    box(-12, 10, 10, 1, '#a86020');
+    box(2, 10, 10, 1, '#a86020');
+    ctx.restore();
+  }
+
+  function drawCelebration() {
+    const elapsed = CELEBRATION_MS - celebrationTimer;
+    const progress = elapsed / CELEBRATION_MS;
+
+    // Dim the board a touch so Mario reads well.
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
+    ctx.fillRect(0, 0, boardCanvas.width, boardCanvas.height);
+
+    // Mario bounces 3 times: absolute sine so every arch is a full jump.
+    const bounces = 3;
+    const scale = 3;
+    const groundY = boardCanvas.height * 0.68;
+    const jumpY = Math.abs(Math.sin(progress * Math.PI * bounces)) * 90;
+    const marioY = groundY - jumpY;
+    const marioX = boardCanvas.width / 2;
+    const flip = Math.floor(progress * bounces * 2) % 2 === 0;
+
+    // Coins sparkling around on the first two thirds of the animation.
+    if (progress < 0.8) {
+      const t = elapsed / 1000;
+      for (let i = 0; i < 6; i++) {
+        const ang = t * 2 + (i / 6) * Math.PI * 2;
+        const radius = 70 + Math.sin(t * 4 + i) * 15;
+        const x = marioX + Math.cos(ang) * radius;
+        const y = groundY - 40 + Math.sin(ang) * radius * 0.55 - 10;
+        ctx.fillStyle = '#fcd000';
+        ctx.beginPath();
+        ctx.arc(x, y, 6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#a06000';
+        ctx.fillRect(x - 1, y - 3, 2, 6);
+      }
+    }
+
+    drawMario(marioX, marioY, scale, flip);
+
+    // Bouncing "TETRIS!" banner — flashes yellow/white, classic coin colors.
+    const flashOn = Math.floor(elapsed / 120) % 2 === 0;
+    const bannerY = 60 + Math.sin(progress * Math.PI * 8) * 4;
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.font = `bold 32px 'Press Start 2P', monospace`;
+    const fill = flashOn ? '#fcd000' : '#ffffff';
+    // chunky black outline
+    ctx.fillStyle = '#000';
+    for (const [dx, dy] of [[-3, 0], [3, 0], [0, -3], [0, 3], [-2, -2], [2, -2], [-2, 2], [2, 2]]) {
+      ctx.fillText('TETRIS!', marioX + dx, bannerY + dy);
+    }
+    ctx.fillStyle = fill;
+    ctx.fillText('TETRIS!', marioX, bannerY);
+    // subtitle
+    ctx.font = `bold 14px 'Press Start 2P', monospace`;
+    ctx.fillStyle = '#000';
+    for (const [dx, dy] of [[-2, 0], [2, 0], [0, -2], [0, 2]]) {
+      ctx.fillText('MARIO APPROVED', marioX + dx, bannerY + 30 + dy);
+    }
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText('MARIO APPROVED', marioX, bannerY + 30);
+    ctx.restore();
   }
 
   function drawNext() {
@@ -627,6 +748,7 @@
     lastTime = time;
 
     if (running && !paused) {
+      if (celebrationTimer > 0) celebrationTimer = Math.max(0, celebrationTimer - delta);
       if (lineClearTimer > 0) {
         lineClearTimer -= delta;
         if (lineClearTimer <= 0) {
