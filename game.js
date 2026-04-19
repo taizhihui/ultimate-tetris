@@ -12,10 +12,20 @@
   const linesEl = document.getElementById('lines');
   const levelEl = document.getElementById('level');
   const livesEl = document.getElementById('lives');
+  const diffEl = document.getElementById('difficulty');
   const overlay = document.getElementById('overlay');
   const overlayTitle = document.getElementById('overlay-title');
   const overlaySub = document.getElementById('overlay-sub');
+  const startOverlay = document.getElementById('start-overlay');
   const boardFrame = document.querySelector('.board-frame');
+
+  const DIFFICULTIES = {
+    easy:   { label: 'EASY',   startSpeed: 1000, speedup: 50, minSpeed: 220, scoreMult: 1.0, linesPerLevel: 10 },
+    medium: { label: 'NORMAL', startSpeed: 800,  speedup: 60, minSpeed: 140, scoreMult: 1.5, linesPerLevel: 10 },
+    hard:   { label: 'HARD',   startSpeed: 500,  speedup: 70, minSpeed: 90,  scoreMult: 2.0, linesPerLevel: 8  },
+    insane: { label: 'INSANE', startSpeed: 250,  speedup: 60, minSpeed: 50,  scoreMult: 3.0, linesPerLevel: 6  },
+  };
+  let difficulty = 'medium';
 
   // Each piece is themed with a Mario-style block texture.
   // textures: 'brick' | 'question' | 'pipe' | 'coin' | 'cloud' | 'star' | 'fire'
@@ -206,12 +216,13 @@
     if (full.length) {
       clearingRows = full;
       lineClearTimer = 280;
+      const cfg = DIFFICULTIES[difficulty];
       const pts = [0, 40, 100, 300, 1200][full.length] * level;
-      score += pts;
+      score += Math.round(pts * cfg.scoreMult);
       lines += full.length;
-      if (lines >= level * 10) {
+      if (lines >= level * cfg.linesPerLevel) {
         level += 1;
-        dropInterval = Math.max(80, 800 - (level - 1) * 60);
+        dropInterval = Math.max(cfg.minSpeed, cfg.startSpeed - (level - 1) * cfg.speedup);
       }
       boardFrame.classList.add('flashing');
     } else {
@@ -249,17 +260,18 @@
     running = false;
     gameOver = true;
     overlayTitle.textContent = 'GAME OVER';
-    overlaySub.textContent = 'PRESS R TO RESTART';
+    overlaySub.textContent = 'PRESS R TO CHANGE MODE';
     overlay.classList.remove('hidden');
   }
 
   function restart() {
+    const cfg = DIFFICULTIES[difficulty];
     grid = createGrid();
     score = 0;
     lines = 0;
     level = 1;
     lives = 3;
-    dropInterval = 800;
+    dropInterval = cfg.startSpeed;
     dropCounter = 0;
     clearingRows = [];
     lineClearTimer = 0;
@@ -271,6 +283,21 @@
     overlay.classList.add('hidden');
     spawn();
     updateHud();
+  }
+
+  function chooseDifficulty(d) {
+    if (!DIFFICULTIES[d]) return;
+    difficulty = d;
+    startOverlay.classList.add('hidden');
+    restart();
+  }
+
+  function showStartScreen() {
+    running = false;
+    paused = false;
+    gameOver = false;
+    overlay.classList.add('hidden');
+    startOverlay.classList.remove('hidden');
   }
 
   function togglePause() {
@@ -292,6 +319,7 @@
     const stage = ((level - 1) % 4) + 1;
     levelEl.textContent = `${world}-${stage}`;
     livesEl.textContent = String(lives);
+    if (diffEl) diffEl.textContent = DIFFICULTIES[difficulty].label;
   }
 
   // ---- drawing ----
@@ -581,7 +609,7 @@
   // ---- input ----
   document.addEventListener('keydown', (e) => {
     if (gameOver) {
-      if (e.key === 'r' || e.key === 'R') restart();
+      if (e.key === 'r' || e.key === 'R') showStartScreen();
       return;
     }
     if (e.key === 'p' || e.key === 'P') {
@@ -599,9 +627,11 @@
     }
   });
 
-  // boot
-  next = randomPiece();
-  spawn();
+  document.querySelectorAll('.diff-btn').forEach((btn) => {
+    btn.addEventListener('click', () => chooseDifficulty(btn.dataset.diff));
+  });
+
+  // boot — show start screen, let player pick difficulty before starting
   updateHud();
   requestAnimationFrame(loop);
 })();

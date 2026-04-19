@@ -49,6 +49,10 @@
             <div class="stat-label">LIVES</div>
             <div class="stat-value"><span class="mario-icon">M</span>x<span id="lives">3</span></div>
           </div>
+          <div class="stat">
+            <div class="stat-label">MODE</div>
+            <div class="stat-value" id="difficulty">—</div>
+          </div>
         </aside>
 
         <div class="board-frame">
@@ -57,6 +61,30 @@
             <div class="overlay-inner">
               <div id="overlay-title" class="overlay-title">PAUSED</div>
               <div id="overlay-sub" class="overlay-sub">PRESS P TO RESUME</div>
+            </div>
+          </div>
+          <div id="start-overlay" class="overlay start-overlay">
+            <div class="overlay-inner">
+              <div class="overlay-title">SELECT WORLD</div>
+              <div class="overlay-sub" style="animation:none;margin-bottom:14px">PICK YOUR DIFFICULTY</div>
+              <div class="diff-grid">
+                <button class="diff-btn easy" data-diff="easy">
+                  <span class="diff-name">EASY</span>
+                  <span class="diff-sub">GOOMBA &middot; 1.0x</span>
+                </button>
+                <button class="diff-btn medium" data-diff="medium">
+                  <span class="diff-name">NORMAL</span>
+                  <span class="diff-sub">KOOPA &middot; 1.5x</span>
+                </button>
+                <button class="diff-btn hard" data-diff="hard">
+                  <span class="diff-name">HARD</span>
+                  <span class="diff-sub">BOWSER &middot; 2.0x</span>
+                </button>
+                <button class="diff-btn insane" data-diff="insane">
+                  <span class="diff-name">INSANE</span>
+                  <span class="diff-sub">WARIO &middot; 3.0x</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>
