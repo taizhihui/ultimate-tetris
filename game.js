@@ -227,6 +227,28 @@
     return false;
   }
 
+  // Bounds-only collision — ignores existing grid cells so the starman piece
+  // can phase through blocks and fill holes underneath.
+  function boundsCollides(shape, x, y) {
+    for (let r = 0; r < shape.length; r++) {
+      for (let c = 0; c < shape[r].length; c++) {
+        if (!shape[r][c]) continue;
+        const nx = x + c;
+        const ny = y + r;
+        if (nx < 0 || nx >= COLS || ny >= ROWS) return true;
+      }
+    }
+    return false;
+  }
+
+  // Returns the lowest empty row in column cx, or -1 if the column is full.
+  function starmanLandingRow(cx) {
+    for (let r = ROWS - 1; r >= 0; r--) {
+      if (!grid[r][cx]) return r;
+    }
+    return -1;
+  }
+
   function merge(piece) {
     for (let r = 0; r < piece.shape.length; r++) {
       for (let c = 0; c < piece.shape[r].length; c++) {
@@ -276,7 +298,8 @@
 
   function softDrop() {
     if (!current) return;
-    if (!collides(current.shape, current.x, current.y + 1)) {
+    const check = current.isStarman ? boundsCollides : collides;
+    if (!check(current.shape, current.x, current.y + 1)) {
       current.y += 1;
       score += 1;
       updateHud();
@@ -289,20 +312,21 @@
   function hardDrop() {
     if (!current || hardDropping) return;
     let dist = 0;
-    let probeY = current.y;
-    while (!collides(current.shape, current.x, probeY + 1)) {
-      probeY++;
-      dist++;
+    let targetY;
+    if (current.isStarman) {
+      targetY = starmanLandingRow(current.x);
+      if (targetY < 0) { lockPiece(); return; } // column full
+      dist = Math.max(0, targetY - current.y);
+    } else {
+      let probeY = current.y;
+      while (!collides(current.shape, current.x, probeY + 1)) { probeY++; dist++; }
+      targetY = probeY;
     }
-    if (dist === 0) {
-      // already resting; just lock
-      lockPiece();
-      return;
-    }
-    hardDropTargetY = probeY;
+    if (dist === 0) { lockPiece(); return; }
+    hardDropTargetY = targetY;
     hardDropAccum = 0;
     hardDropping = true;
-    score += dist * 2; // commit score immediately; animation just visualizes the descent
+    score += dist * 2;
     updateHud();
   }
 
@@ -324,6 +348,23 @@
     // Capture special flags BEFORE current is nulled
     const wasStarman = current && current.isStarman;
     const wasMystery = current && current.isMystery;
+
+    // Snap starman to the lowest empty cell in its column before merging.
+    if (wasStarman) {
+      const targetRow = starmanLandingRow(current.x);
+      if (targetRow < 0) {
+        // Column completely full — skip placement, still grant the power-up.
+        current = null;
+        starmanTimer = 5000;
+        bonusPopupText = '\u2605 STAR POWER! \u2605';
+        bonusPopupTimer = 2000;
+        window.GameAudio && GameAudio.victoryFanfare();
+        spawn();
+        updateHud();
+        return;
+      }
+      current.y = targetRow;
+    }
 
     merge(current);
     current = null;
@@ -885,8 +926,14 @@
 
   function drawGhost() {
     if (!current) return;
-    let gy = current.y;
-    while (!collides(current.shape, current.x, gy + 1)) gy++;
+    let gy;
+    if (current.isStarman) {
+      gy = starmanLandingRow(current.x);
+      if (gy < 0) return; // column full, nowhere to land
+    } else {
+      gy = current.y;
+      while (!collides(current.shape, current.x, gy + 1)) gy++;
+    }
     ctx.save();
     ctx.globalAlpha = 0.22;
     for (let r = 0; r < current.shape.length; r++) {
@@ -1494,7 +1541,8 @@
         dropCounter += delta;
         if (dropCounter > effectiveDropInterval) {
           if (current) {
-            if (!collides(current.shape, current.x, current.y + 1)) {
+            const check = current.isStarman ? boundsCollides : collides;
+            if (!check(current.shape, current.x, current.y + 1)) {
               current.y += 1;
             } else {
               lockPiece();
