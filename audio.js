@@ -160,6 +160,62 @@
   function sfxLevelUp()  { sfx([[N.G5, 0.08], [N.C6, 0.08], [N.E6, 0.16]], 'square', 0.28); }
   function sfxGameOver() { sfx([[N.C5, 0.14], [N.B4, 0.14], [N.A4, 0.14], [N.G4, 0.14], [N.F4, 0.14], [N.E4, 0.28]], 'square', 0.26); }
 
+  // Princess-rescue style victory fanfare: bright triumphant arpeggios over
+  // a slow walking bass. Routed through the SFX bus so it still plays when
+  // the background music is muted. Total ~3.4s.
+  function victoryFanfare() {
+    if (!sfxEnabled) return;
+    if (!ensureContext()) return;
+    if (ctx.state === 'suspended') ctx.resume();
+    const start = ctx.currentTime + 0.02;
+
+    // Melody — soaring triadic ascent, answered by a descending flourish,
+    // then a final lifted cadence that hangs on the tonic.
+    const melody = [
+      ['C5', 0.14], ['E5', 0.14], ['G5', 0.14], ['C6', 0.30],
+      ['G5', 0.12], ['E5', 0.12], ['C5', 0.12], ['G4', 0.22],
+      ['F5', 0.14], ['A5', 0.14], ['C6', 0.14], ['F6', 0.30],
+      ['E6', 0.14], ['D6', 0.14], ['C6', 0.30],
+      ['G5', 0.14], ['B5', 0.14], ['D6', 0.14], ['G6', 0.30],
+      ['E6', 0.12], ['G6', 0.12], ['C6', 0.42],
+      ['C6', 0.10], ['E6', 0.10], ['G6', 0.10], ['C7', 0.48],
+    ];
+    let t = start;
+    for (const [note, dur] of melody) {
+      playTone(N[note], t, Math.max(0.05, dur * 0.92), 'square', 0.22, sfxGain);
+      t += dur;
+    }
+
+    // Countermelody one octave below (softer) for fullness.
+    const harmony = [
+      ['C4', 0.14], ['E4', 0.14], ['G4', 0.14], ['C5', 0.30],
+      ['G4', 0.12], ['E4', 0.12], ['C4', 0.12], ['G3', 0.22],
+      ['F4', 0.14], ['A4', 0.14], ['C5', 0.14], ['F5', 0.30],
+      ['E5', 0.14], ['D5', 0.14], ['C5', 0.30],
+      ['G4', 0.14], ['B4', 0.14], ['D5', 0.14], ['G5', 0.30],
+      ['E5', 0.12], ['G5', 0.12], ['C5', 0.42],
+      ['C5', 0.10], ['E5', 0.10], ['G5', 0.10], ['C6', 0.48],
+    ];
+    let h = start;
+    for (const [note, dur] of harmony) {
+      playTone(N[note], h, Math.max(0.05, dur * 0.92), 'square', 0.10, sfxGain);
+      h += dur;
+    }
+
+    // Walking-bass triads on I - V - IV - V - I.
+    const bass = [
+      ['C3', 0.5], ['G2', 0.5],
+      ['F3', 0.5], ['G3', 0.5],
+      ['C3', 0.4], ['G3', 0.4],
+      ['C3', 0.8],
+    ];
+    let b = start;
+    for (const [note, dur] of bass) {
+      playTone(N[note], b, dur * 0.95, 'triangle', 0.28, sfxGain);
+      b += dur;
+    }
+  }
+
   window.GameAudio = {
     startMusic,
     stopMusic,
@@ -170,5 +226,6 @@
     isMusicEnabled: () => musicEnabled,
     isSfxEnabled: () => sfxEnabled,
     sfxMove, sfxRotate, sfxLock, sfxLine, sfxTetris, sfxLevelUp, sfxGameOver,
+    victoryFanfare,
   };
 })();

@@ -13,7 +13,7 @@
   function sizeMarioStage() {
     if (!marioStage) return;
     const w = window.innerWidth;
-    const h = 220;
+    const h = window.innerHeight;
     if (marioStage.width !== w) marioStage.width = w;
     if (marioStage.height !== h) marioStage.height = h;
   }
@@ -122,7 +122,43 @@
   let hardDropAccum = 0;
   const HARD_DROP_MS_PER_CELL = 6; // ~167 cells/sec; ~120ms for a full-board drop
   let celebrationTimer = 0;
-  const CELEBRATION_MS = 2600;
+  const CELEBRATION_MS = 3800;
+  let graffitiTags = [];
+  const GRAFFITI_WORDS = ['TETRIS!', 'SUPER!', 'BRAVO!', 'WOW!', 'AMAZING!', '4 LINES!', 'PRINCESS!', 'LEGEND!', 'MAMMA MIA!', 'LEVEL UP!'];
+  const GRAFFITI_COLORS = ['#ff4da6', '#80ff00', '#00e5ff', '#fcd000', '#ff8c00', '#ff66ff', '#ffffff', '#ff3030'];
+
+  function spawnGraffiti() {
+    graffitiTags = [];
+    // Bias tag placement to the margins of the viewport so the game panel
+    // (centered, z-index 2) doesn't hide most of them.
+    const regions = [
+      { x: [0.03, 0.25], y: [0.08, 0.78] }, // left of panel
+      { x: [0.75, 0.97], y: [0.08, 0.78] }, // right of panel
+      { x: [0.12, 0.88], y: [0.02, 0.12] }, // top strip above panel
+      { x: [0.12, 0.88], y: [0.86, 0.95] }, // bottom strip above ground
+    ];
+    const COUNT = 10;
+    const used = new Set();
+    for (let i = 0; i < COUNT; i++) {
+      let word;
+      let tries = 0;
+      do {
+        word = GRAFFITI_WORDS[Math.floor(Math.random() * GRAFFITI_WORDS.length)];
+        tries++;
+      } while (used.has(word) && tries < 20);
+      used.add(word);
+      const r = regions[i % regions.length];
+      graffitiTags.push({
+        text: word,
+        x: r.x[0] + Math.random() * (r.x[1] - r.x[0]),
+        y: r.y[0] + Math.random() * (r.y[1] - r.y[0]),
+        rot: (Math.random() - 0.5) * 0.55,
+        size: 32 + Math.random() * 40,
+        color: GRAFFITI_COLORS[Math.floor(Math.random() * GRAFFITI_COLORS.length)],
+        bornAt: Math.random() * 0.22,
+      });
+    }
+  }
 
   function createGrid() {
     return Array.from({ length: ROWS }, () => Array(COLS).fill(null));
@@ -269,12 +305,13 @@
       }
       boardFrame.classList.add('flashing');
       if (window.GameAudio) {
-        if (full.length >= 4) GameAudio.sfxTetris();
+        if (full.length >= 4) GameAudio.victoryFanfare();
         else GameAudio.sfxLine();
         if (leveledUp) GameAudio.sfxLevelUp();
       }
       if (full.length >= 4) {
         celebrationTimer = CELEBRATION_MS;
+        spawnGraffiti();
         // Reward the player: the next piece gets a power-up skin (star or mushroom).
         if (next) next.texture = Math.random() < 0.5 ? 'star' : 'mushroom';
       }
@@ -719,8 +756,60 @@
     c.restore();
   }
 
-  // Mario runs in on the ground stage (a separate canvas below the board),
-  // bounces around, then runs out — without blocking the playing field.
+  // Spray-paint style celebration tags scattered across the scene. Each tag
+  // fades in at a staggered time, stays, then fades out near the end.
+  function drawGraffiti(progress) {
+    if (!graffitiTags.length) return;
+    const W = marioStage.width;
+    const H = marioStage.height;
+    for (const tag of graffitiTags) {
+      const age = progress - tag.bornAt;
+      if (age < 0) continue;
+      const fadeIn = Math.min(1, age / 0.08);
+      const fadeOut = 1 - Math.max(0, (progress - 0.85) / 0.15);
+      const alpha = Math.max(0, Math.min(fadeIn, fadeOut));
+      if (alpha <= 0) continue;
+
+      const cx = tag.x * W;
+      const cy = tag.y * H;
+      mctx.save();
+      mctx.translate(cx, cy);
+      mctx.rotate(tag.rot);
+      mctx.textAlign = 'center';
+      mctx.textBaseline = 'middle';
+      mctx.font = `bold ${tag.size}px 'Press Start 2P', monospace`;
+
+      // spray halo — translucent offset copies give a wet-paint glow
+      mctx.fillStyle = tag.color;
+      for (let i = 0; i < 8; i++) {
+        const rx = Math.cos((i / 8) * Math.PI * 2) * 10;
+        const ry = Math.sin((i / 8) * Math.PI * 2) * 10;
+        mctx.globalAlpha = alpha * 0.08;
+        mctx.fillText(tag.text, rx, ry);
+      }
+      mctx.globalAlpha = alpha;
+
+      // chunky black outline for contrast
+      mctx.fillStyle = '#000';
+      for (const [dx, dy] of [[-4, 0], [4, 0], [0, -4], [0, 4], [-3, -3], [3, -3], [-3, 3], [3, 3]]) {
+        mctx.fillText(tag.text, dx, dy);
+      }
+      // main fill, with a subtle flashing sheen on the top half
+      mctx.fillStyle = tag.color;
+      mctx.fillText(tag.text, 0, 0);
+      const sheenOn = Math.floor(progress * 12) % 2 === 0;
+      if (sheenOn) {
+        mctx.fillStyle = '#ffffff';
+        mctx.globalAlpha = alpha * 0.4;
+        mctx.fillText(tag.text, 0, -2);
+      }
+      mctx.restore();
+    }
+  }
+
+  // Mario runs in on a full-viewport stage canvas layered behind the game
+  // panel, bounces around, then runs out — graffiti fades in behind him to
+  // make the celebration unmissable without blocking the playing field.
   function drawCelebrationStage() {
     if (!mctx || !marioStage) return;
     mctx.clearRect(0, 0, marioStage.width, marioStage.height);
@@ -730,8 +819,10 @@
     const progress = elapsed / CELEBRATION_MS;
     const W = marioStage.width;
     const H = marioStage.height;
-    const groundY = H - 30; // where Mario's feet rest
-    const scale = 2.6;
+    const groundY = H - 90; // Mario's feet sit just above the ground strip
+    const scale = 2.8;
+
+    drawGraffiti(progress);
 
     // Phases: run in (0-0.2), celebrate jumping (0.2-0.8), run out (0.8-1.0)
     const RUN_IN_END = 0.2;
@@ -771,17 +862,17 @@
     // Coin shower orbiting Mario during the celebrate phase.
     if (progress >= RUN_IN_END && progress < CELEBRATE_END) {
       const t = elapsed / 1000;
-      for (let i = 0; i < 6; i++) {
-        const ang = t * 3 + (i / 6) * Math.PI * 2;
-        const radius = 80 + Math.sin(t * 4 + i) * 14;
+      for (let i = 0; i < 8; i++) {
+        const ang = t * 3 + (i / 8) * Math.PI * 2;
+        const radius = 130 + Math.sin(t * 4 + i) * 22;
         const x = centerX + Math.cos(ang) * radius;
-        const y = groundY - 50 + Math.sin(ang) * radius * 0.5;
+        const y = groundY - 80 + Math.sin(ang) * radius * 0.55;
         mctx.fillStyle = '#fcd000';
         mctx.beginPath();
-        mctx.arc(x, y, 7, 0, Math.PI * 2);
+        mctx.arc(x, y, 10, 0, Math.PI * 2);
         mctx.fill();
         mctx.fillStyle = '#a06000';
-        mctx.fillRect(x - 1, y - 3, 2, 6);
+        mctx.fillRect(x - 2, y - 4, 3, 8);
       }
     }
 

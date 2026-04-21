@@ -152,11 +152,12 @@ body {
   position: absolute;
   left: 0;
   right: 0;
+  top: 0;
   bottom: 0;
   width: 100vw;
-  height: 220px;
+  height: 100vh;
   pointer-events: none;
-  z-index: 1;
+  z-index: 1; /* behind the game panel so graffiti fills the scene without blocking play */
   image-rendering: pixelated;
 }
 
