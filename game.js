@@ -25,6 +25,7 @@
   const levelEl = document.getElementById('level');
   const livesEl = document.getElementById('lives');
   const diffEl = document.getElementById('difficulty');
+  const bestEl = document.getElementById('best-score');
   const overlay = document.getElementById('overlay');
   const overlayTitle = document.getElementById('overlay-title');
   const overlaySub = document.getElementById('overlay-sub');
@@ -352,11 +353,64 @@
     drawNext();
   }
 
+  // ---- leaderboard ----
+
+  const LEADERBOARD_KEY = 'smTetrisLeaderboard';
+  const MAX_LB_ENTRIES = 10;
+
+  function loadLeaderboard() {
+    try { return JSON.parse(localStorage.getItem(LEADERBOARD_KEY)) || []; }
+    catch { return []; }
+  }
+
+  function saveScoreToLeaderboard(scoreVal, diff) {
+    const entries = loadLeaderboard();
+    const rank = entries.filter(e => e.score > scoreVal).length + 1;
+    if (rank <= MAX_LB_ENTRIES) {
+      entries.push({ score: scoreVal, diff, date: new Date().toLocaleDateString() });
+      entries.sort((a, b) => b.score - a.score);
+      if (entries.length > MAX_LB_ENTRIES) entries.length = MAX_LB_ENTRIES;
+      localStorage.setItem(LEADERBOARD_KEY, JSON.stringify(entries));
+    }
+    return rank <= MAX_LB_ENTRIES ? rank : null;
+  }
+
+  function getBestForDifficulty(diff) {
+    const entries = loadLeaderboard().filter(e => e.diff === diff);
+    return entries.length ? entries[0].score : 0;
+  }
+
+  function renderLeaderboard() {
+    const list = document.getElementById('leaderboard-list');
+    if (!list) return;
+    const entries = loadLeaderboard();
+    if (!entries.length) {
+      list.innerHTML = '<div class="lb-empty">NO SCORES YET</div>';
+      return;
+    }
+    list.innerHTML = entries.slice(0, 8).map((e, i) => {
+      const label = DIFFICULTIES[e.diff] ? DIFFICULTIES[e.diff].label : e.diff;
+      return `<div class="lb-row${i === 0 ? ' lb-top' : ''}">` +
+        `<span class="lb-rank">${i + 1}</span>` +
+        `<span class="lb-diff lb-diff-${e.diff}">${label}</span>` +
+        `<span class="lb-score">${String(e.score).padStart(6, '0')}</span>` +
+        `<span class="lb-date">${e.date}</span>` +
+        `</div>`;
+    }).join('');
+  }
+
   function endGame() {
     running = false;
     gameOver = true;
+    const rank = saveScoreToLeaderboard(score, difficulty);
     overlayTitle.textContent = 'GAME OVER';
-    overlaySub.textContent = 'PRESS R TO CHANGE MODE';
+    if (rank === 1) {
+      overlaySub.textContent = '\u2605 NEW RECORD! PRESS R \u2605';
+    } else if (rank !== null) {
+      overlaySub.textContent = `RANK #${rank}! PRESS R`;
+    } else {
+      overlaySub.textContent = 'PRESS R TO CHANGE MODE';
+    }
     overlay.classList.remove('hidden');
     if (window.GameAudio) {
       GameAudio.stopMusic();
@@ -409,6 +463,7 @@
     boardFrame.classList.remove('flashing');
     overlay.classList.add('hidden');
     startOverlay.classList.remove('hidden');
+    renderLeaderboard();
     window.GameAudio && GameAudio.stopMusic();
   }
 
@@ -434,6 +489,7 @@
     levelEl.textContent = `${world}-${stage}`;
     livesEl.textContent = String(lives);
     if (diffEl) diffEl.textContent = DIFFICULTIES[difficulty].label;
+    if (bestEl) bestEl.textContent = String(Math.max(getBestForDifficulty(difficulty), score)).padStart(6, '0');
   }
 
   // ---- drawing ----
@@ -1189,5 +1245,6 @@
 
   // boot — show start screen, let player pick difficulty before starting
   updateHud();
+  renderLeaderboard();
   requestAnimationFrame(loop);
 })();

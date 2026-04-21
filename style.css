@@ -485,6 +485,65 @@ body {
   animation: clearFlash 0.25s ease 2;
 }
 
+/* Leaderboard */
+.lb-section {
+  margin-top: 12px;
+  width: 100%;
+}
+.lb-title {
+  font-size: 8px;
+  color: #fcd000;
+  letter-spacing: 1px;
+  margin-bottom: 6px;
+  text-align: center;
+}
+.lb-list {
+  width: 100%;
+}
+.lb-empty {
+  font-size: 8px;
+  color: #555;
+  text-align: center;
+  padding: 6px 0;
+}
+.lb-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 7px;
+  padding: 3px 4px;
+  border-bottom: 1px solid #222;
+}
+.lb-row.lb-top {
+  background: rgba(252, 208, 0, 0.08);
+}
+.lb-rank {
+  color: #666;
+  width: 12px;
+  flex-shrink: 0;
+}
+.lb-row.lb-top .lb-rank { color: #fcd000; }
+.lb-diff {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lb-diff-easy   { color: #80d010; }
+.lb-diff-medium { color: #fcd000; }
+.lb-diff-hard   { color: #ff4040; }
+.lb-diff-insane { color: #d080ff; }
+.lb-score {
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+.lb-date {
+  color: #555;
+  font-size: 6px;
+  flex-shrink: 0;
+}
+
 /* small screens */
 @media (max-width: 820px) {
   .game-area { flex-direction: column; align-items: center; }
