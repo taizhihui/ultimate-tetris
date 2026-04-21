@@ -146,6 +146,20 @@ body {
   opacity: 0.7;
 }
 
+/* Mario celebration stage — sits over the hills/ground so he can run on
+   the scenery without touching the game board. */
+.mario-stage {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100vw;
+  height: 220px;
+  pointer-events: none;
+  z-index: 1;
+  image-rendering: pixelated;
+}
+
 /* Game layout */
 .game-wrap {
   position: relative;

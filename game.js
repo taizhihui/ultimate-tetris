@@ -7,6 +7,18 @@
   const ctx = boardCanvas.getContext('2d');
   const nextCanvas = document.getElementById('next');
   const nctx = nextCanvas.getContext('2d');
+  const marioStage = document.getElementById('mario-stage');
+  const mctx = marioStage ? marioStage.getContext('2d') : null;
+
+  function sizeMarioStage() {
+    if (!marioStage) return;
+    const w = window.innerWidth;
+    const h = 220;
+    if (marioStage.width !== w) marioStage.width = w;
+    if (marioStage.height !== h) marioStage.height = h;
+  }
+  sizeMarioStage();
+  window.addEventListener('resize', sizeMarioStage);
 
   const scoreEl = document.getElementById('score');
   const linesEl = document.getElementById('lines');
@@ -261,7 +273,11 @@
         else GameAudio.sfxLine();
         if (leveledUp) GameAudio.sfxLevelUp();
       }
-      if (full.length >= 4) celebrationTimer = CELEBRATION_MS;
+      if (full.length >= 4) {
+        celebrationTimer = CELEBRATION_MS;
+        // Reward the player: the next piece gets a power-up skin (star or mushroom).
+        if (next) next.texture = Math.random() < 0.5 ? 'star' : 'mushroom';
+      }
     } else {
       window.GameAudio && GameAudio.sfxLock();
       spawn();
@@ -389,8 +405,38 @@
       case 'cloud': drawCloudBlock(c, x, y, s); break;
       case 'star': drawStarBlock(c, x, y, s); break;
       case 'fire': drawFireBlock(c, x, y, s); break;
+      case 'mushroom': drawMushroomBlock(c, x, y, s); break;
       default: drawBrick(c, x, y, s);
     }
+  }
+
+  // Super Mushroom: red cap with white spots, cream stalk with eyes.
+  function drawMushroomBlock(c, x, y, s) {
+    fillRect(c, x, y, s, s, '#fcdcb0'); // stalk base
+    // red cap covers the top 60% of the block
+    const capH = Math.round(s * 0.6);
+    fillRect(c, x, y, s, capH, '#e40000');
+    fillRect(c, x, y, s, 3, '#ff8888'); // highlight
+    fillRect(c, x, y + capH - 3, s, 3, '#700000'); // cap shadow edge
+    // white spots on the cap
+    c.fillStyle = '#ffffff';
+    c.beginPath();
+    c.arc(x + s * 0.3, y + s * 0.25, s * 0.12, 0, Math.PI * 2);
+    c.fill();
+    c.beginPath();
+    c.arc(x + s * 0.72, y + s * 0.38, s * 0.09, 0, Math.PI * 2);
+    c.fill();
+    // stalk shading
+    fillRect(c, x, y + capH, 3, s - capH, '#c0a070');
+    fillRect(c, x + s - 3, y + capH, 3, s - capH, '#c0a070');
+    // eyes
+    c.fillStyle = '#000000';
+    const eyeY = y + capH + Math.max(2, Math.floor((s - capH) * 0.25));
+    c.fillRect(x + Math.round(s * 0.32), eyeY, 2, 4);
+    c.fillRect(x + Math.round(s * 0.62), eyeY, 2, 4);
+    // outer outline
+    fillRect(c, x, y + s - 2, s, 2, '#a04810');
+    fillRect(c, x + s - 2, y, 2, s, '#a04810');
   }
 
   function fillRect(c, x, y, w, h, color) {
@@ -608,16 +654,16 @@
       }
     }
 
-    if (celebrationTimer > 0) drawCelebration();
   }
 
   // Procedurally paints a blocky Mario sprite centered at (cx, cy).
-  function drawMario(cx, cy, scale = 1, flipX = false) {
+  // `stride` (0|1) swaps leg positions so he looks like he's running.
+  function drawMario(c, cx, cy, scale = 1, flipX = false, stride = 0) {
     const S = scale;
-    ctx.save();
-    ctx.translate(cx, cy);
-    if (flipX) ctx.scale(-1, 1);
-    const box = (x, y, w, h, color) => { ctx.fillStyle = color; ctx.fillRect(x * S, y * S, w * S, h * S); };
+    c.save();
+    c.translate(cx, cy);
+    if (flipX) c.scale(-1, 1);
+    const box = (x, y, w, h, color) => { c.fillStyle = color; c.fillRect(x * S, y * S, w * S, h * S); };
     // cap (red)
     box(-10, -30, 20, 4, '#e40000');
     box(-14, -26, 28, 6, '#e40000');
@@ -653,77 +699,114 @@
     // overall buttons
     box(-5, 0, 3, 3, '#fcd000');
     box(2, 0, 3, 3, '#fcd000');
-    // gloves
-    box(-16, 8, 6, 4, '#ffffff');
-    box(10, 8, 6, 4, '#ffffff');
-    // shoes
-    box(-12, 10, 10, 6, '#6e2800');
-    box(2, 10, 10, 6, '#6e2800');
-    // shoe highlight
-    box(-12, 10, 10, 1, '#a86020');
-    box(2, 10, 10, 1, '#a86020');
-    ctx.restore();
+    // gloves — arms swing while running
+    const armA = stride === 0 ? 0 : -3;
+    const armB = stride === 0 ? -3 : 0;
+    box(-16, 8 + armA, 6, 4, '#ffffff');
+    box(10, 8 + armB, 6, 4, '#ffffff');
+    // shoes — legs alternate forward/back
+    if (stride === 0) {
+      box(-12, 10, 10, 6, '#6e2800');
+      box(4, 10, 10, 6, '#6e2800');
+      box(-12, 10, 10, 1, '#a86020');
+      box(4, 10, 10, 1, '#a86020');
+    } else {
+      box(-14, 10, 10, 6, '#6e2800');
+      box(2, 10, 10, 6, '#6e2800');
+      box(-14, 10, 10, 1, '#a86020');
+      box(2, 10, 10, 1, '#a86020');
+    }
+    c.restore();
   }
 
-  function drawCelebration() {
+  // Mario runs in on the ground stage (a separate canvas below the board),
+  // bounces around, then runs out — without blocking the playing field.
+  function drawCelebrationStage() {
+    if (!mctx || !marioStage) return;
+    mctx.clearRect(0, 0, marioStage.width, marioStage.height);
+    if (celebrationTimer <= 0) return;
+
     const elapsed = CELEBRATION_MS - celebrationTimer;
     const progress = elapsed / CELEBRATION_MS;
+    const W = marioStage.width;
+    const H = marioStage.height;
+    const groundY = H - 30; // where Mario's feet rest
+    const scale = 2.6;
 
-    // Dim the board a touch so Mario reads well.
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
-    ctx.fillRect(0, 0, boardCanvas.width, boardCanvas.height);
+    // Phases: run in (0-0.2), celebrate jumping (0.2-0.8), run out (0.8-1.0)
+    const RUN_IN_END = 0.2;
+    const CELEBRATE_END = 0.8;
 
-    // Mario bounces 3 times: absolute sine so every arch is a full jump.
-    const bounces = 3;
-    const scale = 3;
-    const groundY = boardCanvas.height * 0.68;
-    const jumpY = Math.abs(Math.sin(progress * Math.PI * bounces)) * 90;
-    const marioY = groundY - jumpY;
-    const marioX = boardCanvas.width / 2;
-    const flip = Math.floor(progress * bounces * 2) % 2 === 0;
+    // Pick a side to enter from based on which half of the screen has more room.
+    // Use the right half so Mario doesn't cut across the game panel every time;
+    // offscreen start / end anchor off the right edge.
+    const centerX = W * 0.78;
+    const offRight = W + 80;
+    const offLeft = -80;
 
-    // Coins sparkling around on the first two thirds of the animation.
-    if (progress < 0.8) {
+    let marioX, marioY, flip, stride;
+    if (progress < RUN_IN_END) {
+      const p = progress / RUN_IN_END;
+      marioX = offRight + (centerX - offRight) * p;
+      marioY = groundY - Math.abs(Math.sin(p * Math.PI * 2)) * 6; // subtle run-bob
+      flip = true; // facing left (moving from right to left)
+      stride = Math.floor(p * 10) % 2;
+    } else if (progress < CELEBRATE_END) {
+      const p = (progress - RUN_IN_END) / (CELEBRATE_END - RUN_IN_END);
+      const bounces = 3;
+      marioX = centerX;
+      const jumpY = Math.abs(Math.sin(p * Math.PI * bounces)) * 80;
+      marioY = groundY - jumpY;
+      // alternate facing during jumps for flair
+      flip = Math.floor(p * bounces * 2) % 2 === 0;
+      stride = 0;
+    } else {
+      const p = (progress - CELEBRATE_END) / (1 - CELEBRATE_END);
+      marioX = centerX + (offLeft - centerX) * p;
+      marioY = groundY - Math.abs(Math.sin(p * Math.PI * 2)) * 6;
+      flip = true;
+      stride = Math.floor(p * 10) % 2;
+    }
+
+    // Coin shower orbiting Mario during the celebrate phase.
+    if (progress >= RUN_IN_END && progress < CELEBRATE_END) {
       const t = elapsed / 1000;
       for (let i = 0; i < 6; i++) {
-        const ang = t * 2 + (i / 6) * Math.PI * 2;
-        const radius = 70 + Math.sin(t * 4 + i) * 15;
-        const x = marioX + Math.cos(ang) * radius;
-        const y = groundY - 40 + Math.sin(ang) * radius * 0.55 - 10;
-        ctx.fillStyle = '#fcd000';
-        ctx.beginPath();
-        ctx.arc(x, y, 6, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = '#a06000';
-        ctx.fillRect(x - 1, y - 3, 2, 6);
+        const ang = t * 3 + (i / 6) * Math.PI * 2;
+        const radius = 80 + Math.sin(t * 4 + i) * 14;
+        const x = centerX + Math.cos(ang) * radius;
+        const y = groundY - 50 + Math.sin(ang) * radius * 0.5;
+        mctx.fillStyle = '#fcd000';
+        mctx.beginPath();
+        mctx.arc(x, y, 7, 0, Math.PI * 2);
+        mctx.fill();
+        mctx.fillStyle = '#a06000';
+        mctx.fillRect(x - 1, y - 3, 2, 6);
       }
     }
 
-    drawMario(marioX, marioY, scale, flip);
+    drawMario(mctx, marioX, marioY, scale, flip, stride);
 
-    // Bouncing "TETRIS!" banner — flashes yellow/white, classic coin colors.
+    // Bouncing "TETRIS!" banner anchored above Mario's current position.
     const flashOn = Math.floor(elapsed / 120) % 2 === 0;
-    const bannerY = 60 + Math.sin(progress * Math.PI * 8) * 4;
-    ctx.save();
-    ctx.textAlign = 'center';
-    ctx.font = `bold 32px 'Press Start 2P', monospace`;
-    const fill = flashOn ? '#fcd000' : '#ffffff';
-    // chunky black outline
-    ctx.fillStyle = '#000';
+    const bannerY = Math.max(40, marioY - 100);
+    mctx.save();
+    mctx.textAlign = 'center';
+    mctx.font = `bold 28px 'Press Start 2P', monospace`;
+    mctx.fillStyle = '#000';
     for (const [dx, dy] of [[-3, 0], [3, 0], [0, -3], [0, 3], [-2, -2], [2, -2], [-2, 2], [2, 2]]) {
-      ctx.fillText('TETRIS!', marioX + dx, bannerY + dy);
+      mctx.fillText('TETRIS!', marioX + dx, bannerY + dy);
     }
-    ctx.fillStyle = fill;
-    ctx.fillText('TETRIS!', marioX, bannerY);
-    // subtitle
-    ctx.font = `bold 14px 'Press Start 2P', monospace`;
-    ctx.fillStyle = '#000';
+    mctx.fillStyle = flashOn ? '#fcd000' : '#ffffff';
+    mctx.fillText('TETRIS!', marioX, bannerY);
+    mctx.font = `bold 11px 'Press Start 2P', monospace`;
+    mctx.fillStyle = '#000';
     for (const [dx, dy] of [[-2, 0], [2, 0], [0, -2], [0, 2]]) {
-      ctx.fillText('MARIO APPROVED', marioX + dx, bannerY + 30 + dy);
+      mctx.fillText("LET'S-A GO!", marioX + dx, bannerY + 26 + dy);
     }
-    ctx.fillStyle = '#ffffff';
-    ctx.fillText('MARIO APPROVED', marioX, bannerY + 30);
-    ctx.restore();
+    mctx.fillStyle = '#ffffff';
+    mctx.fillText("LET'S-A GO!", marioX, bannerY + 26);
+    mctx.restore();
   }
 
   function drawNext() {
@@ -773,6 +856,7 @@
     }
 
     drawBoard();
+    drawCelebrationStage();
     requestAnimationFrame(loop);
   }
 
