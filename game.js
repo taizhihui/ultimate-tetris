@@ -395,6 +395,12 @@
     running = false;
     paused = false;
     gameOver = false;
+    celebrationTimer = 0;
+    graffitiTags = [];
+    clearingRows = [];
+    lineClearTimer = 0;
+    hardDropping = false;
+    boardFrame.classList.remove('flashing');
     overlay.classList.add('hidden');
     startOverlay.classList.remove('hidden');
     window.GameAudio && GameAudio.stopMusic();
@@ -974,10 +980,8 @@
   document.addEventListener('keydown', (e) => {
     if (e.key === 'm' || e.key === 'M') { toggleMusicPref(); return; }
     if (e.key === 'n' || e.key === 'N') { toggleSfxPref(); return; }
-    if (gameOver) {
-      if (e.key === 'r' || e.key === 'R') showStartScreen();
-      return;
-    }
+    if (e.key === 'r' || e.key === 'R') { showStartScreen(); return; }
+    if (gameOver) return;
     if (e.key === 'p' || e.key === 'P') {
       togglePause();
       return;
