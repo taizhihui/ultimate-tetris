@@ -1437,28 +1437,69 @@
     if (peachCelebTimer > 0) {
       const peachProgress2 = 1 - peachCelebTimer / PEACH_CELEB_MS;
       const fadeAlpha = peachCelebTimer < 500 ? peachCelebTimer / 500 : Math.min(1, peachProgress2 / 0.15);
-      const peachX = W * 0.22;
-      const peachBaseY = H * 0.38;
-      const bounce = Math.sin(Date.now() / 180) * 12;
-      mctx.save();
-      mctx.globalAlpha = Math.max(0, Math.min(1, fadeAlpha));
-      mctx.textAlign = 'center';
-      mctx.textBaseline = 'middle';
-      mctx.font = `bold 13px 'Press Start 2P', monospace`;
-      mctx.fillStyle = '#000';
-      for (const [dx, dy] of [[-2, 0], [2, 0], [0, -2], [0, 2]]) {
-        mctx.fillText('\u2665 PRINCESS RESCUED! \u2665', peachX + dx, peachBaseY + bounce + dy);
+      const alpha = Math.max(0, Math.min(1, fadeAlpha));
+      const peachCenterX = W * 0.22;
+      const groundY = H - 90;
+      const peachScale = 2.8;
+      const P_RUN_IN = 0.2, P_CELEBRATE = 0.8;
+      const offLeft = -80, offRight = W + 80;
+
+      // Sprite: run in → bounce/wave → run out
+      let sprX, sprY, sprFlip, sprStride;
+      if (peachProgress2 < P_RUN_IN) {
+        const p = peachProgress2 / P_RUN_IN;
+        sprX = offLeft + (peachCenterX - offLeft) * p;
+        sprY = groundY - Math.abs(Math.sin(p * Math.PI * 2)) * 6;
+        sprFlip = false;
+        sprStride = Math.floor(p * 10) % 2;
+      } else if (peachProgress2 < P_CELEBRATE) {
+        const p = (peachProgress2 - P_RUN_IN) / (P_CELEBRATE - P_RUN_IN);
+        const bounces = 3;
+        sprX = peachCenterX + Math.sin(p * Math.PI * bounces) * 18;
+        sprY = groundY - Math.abs(Math.sin(p * Math.PI * bounces)) * 50;
+        sprFlip = Math.floor(p * bounces * 2) % 2 === 0;
+        sprStride = 0;
+      } else {
+        const p = (peachProgress2 - P_CELEBRATE) / (1 - P_CELEBRATE);
+        sprX = peachCenterX + (offRight - peachCenterX) * p;
+        sprY = groundY - Math.abs(Math.sin(p * Math.PI * 2)) * 6;
+        sprFlip = false;
+        sprStride = Math.floor(p * 10) % 2;
       }
-      mctx.fillStyle = '#ff69b4';
-      mctx.fillText('\u2665 PRINCESS RESCUED! \u2665', peachX, peachBaseY + bounce);
+
+      mctx.save();
+      mctx.globalAlpha = alpha;
+      drawPrincess(mctx, sprX, sprY, peachScale, sprFlip, sprStride);
+      mctx.restore();
+
+      // Floating hearts above Peach
       const t2 = (PEACH_CELEB_MS - peachCelebTimer) / 1000;
+      mctx.save();
       for (let i = 0; i < 8; i++) {
-        const hx = peachX + Math.sin(t2 * 1.5 + i * 0.8) * 60 + (i - 4) * 18;
-        const hy = peachBaseY + 30 - t2 * 60 + Math.sin(t2 * 2 + i) * 10;
-        mctx.font = '18px serif';
-        mctx.globalAlpha = Math.max(0, Math.min(1, fadeAlpha)) * (1 - Math.min(1, t2 / 2));
+        const hx = sprX + Math.sin(t2 * 1.5 + i * 0.8) * 55 + (i - 4) * 14;
+        const hy = sprY - 60 - t2 * 50 + Math.sin(t2 * 2 + i) * 10;
+        mctx.font = '16px serif';
+        mctx.globalAlpha = alpha * (1 - Math.min(1, t2 / 2));
+        mctx.textAlign = 'center';
+        mctx.fillStyle = '#ff69b4';
         mctx.fillText('\u2665', hx, hy);
       }
+      mctx.restore();
+
+      // "PRINCESS RESCUED!" banner above sprite
+      const bannerY = sprY - 110;
+      const flashOn = Math.floor(t2 * 1000 / 120) % 2 === 0;
+      mctx.save();
+      mctx.globalAlpha = alpha;
+      mctx.textAlign = 'center';
+      mctx.textBaseline = 'middle';
+      mctx.font = `bold 12px 'Press Start 2P', monospace`;
+      for (const [dx, dy] of [[-2, 0], [2, 0], [0, -2], [0, 2]]) {
+        mctx.fillStyle = '#000';
+        mctx.fillText('\u2665 PRINCESS RESCUED! \u2665', peachCenterX + dx, bannerY + dy);
+      }
+      mctx.fillStyle = flashOn ? '#ff69b4' : '#ffaadd';
+      mctx.fillText('\u2665 PRINCESS RESCUED! \u2665', peachCenterX, bannerY);
       mctx.restore();
     }
   }
