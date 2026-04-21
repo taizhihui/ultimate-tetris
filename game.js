@@ -123,6 +123,9 @@
   const HARD_DROP_MS_PER_CELL = 6; // ~167 cells/sec; ~120ms for a full-board drop
   let celebrationTimer = 0;
   const CELEBRATION_MS = 3800;
+  const CELEBRATION_CHARS = ['mario', 'princess', 'luigi'];
+  let celebrationCharIndex = 0;
+  let celebrationChar = 'mario';
   let graffitiTags = [];
   const GRAFFITI_WORDS = ['TETRIS!', 'SUPER!', 'BRAVO!', 'WOW!', 'AMAZING!', '4 LINES!', 'PRINCESS!', 'LEGEND!', 'MAMMA MIA!', 'LEVEL UP!'];
   const GRAFFITI_COLORS = ['#ff4da6', '#80ff00', '#00e5ff', '#fcd000', '#ff8c00', '#ff66ff', '#ffffff', '#ff3030'];
@@ -311,6 +314,8 @@
       }
       if (full.length >= 4) {
         celebrationTimer = CELEBRATION_MS;
+        celebrationChar = CELEBRATION_CHARS[celebrationCharIndex % CELEBRATION_CHARS.length];
+        celebrationCharIndex++;
         spawnGraffiti();
         // Reward the player: the next piece gets a power-up skin (star or mushroom).
         if (next) next.texture = Math.random() < 0.5 ? 'star' : 'mushroom';
@@ -396,6 +401,7 @@
     paused = false;
     gameOver = false;
     celebrationTimer = 0;
+    celebrationCharIndex = 0;
     graffitiTags = [];
     clearingRows = [];
     lineClearTimer = 0;
@@ -699,67 +705,238 @@
 
   }
 
-  // Procedurally paints a blocky Mario sprite centered at (cx, cy).
-  // `stride` (0|1) swaps leg positions so he looks like he's running.
-  function drawMario(c, cx, cy, scale = 1, flipX = false, stride = 0) {
+  // Shared chibi plumber sprite (Mario / Luigi) — soft rounded cap, big shiny
+  // eyes, rosy cheeks. `cfg` swaps colors + emblem so a single routine paints
+  // either brother.
+  function drawPlumber(c, cx, cy, scale, flipX, stride, cfg) {
     const S = scale;
     c.save();
     c.translate(cx, cy);
     if (flipX) c.scale(-1, 1);
     const box = (x, y, w, h, color) => { c.fillStyle = color; c.fillRect(x * S, y * S, w * S, h * S); };
-    // cap (red)
-    box(-10, -30, 20, 4, '#e40000');
-    box(-14, -26, 28, 6, '#e40000');
+
+    // rounded cap (red/green)
+    box(-8, -34, 16, 2, cfg.cap);
+    box(-11, -32, 22, 2, cfg.cap);
+    box(-13, -30, 26, 4, cfg.cap);
+    box(-14, -26, 28, 4, cfg.cap);
+    // cap highlight stripe for softness
+    box(-11, -32, 22, 1, cfg.capLight);
+    // emblem badge on cap
+    box(-4, -28, 8, 6, '#ffffff');
+    if (cfg.emblem === 'M') {
+      // M: two legs + diagonal dips
+      box(-3, -27, 1, 4, cfg.cap);
+      box(2, -27, 1, 4, cfg.cap);
+      box(-2, -26, 1, 1, cfg.cap);
+      box(1, -26, 1, 1, cfg.cap);
+      box(-1, -25, 2, 1, cfg.cap);
+    } else {
+      // L
+      box(-3, -27, 1, 5, cfg.cap);
+      box(-2, -23, 4, 1, cfg.cap);
+    }
     // cap brim shadow
-    box(-14, -20, 28, 2, '#a00000');
-    // hair / sideburns (brown)
-    box(-14, -20, 4, 6, '#6e2800');
-    box(10, -20, 4, 6, '#6e2800');
-    // face
-    box(-10, -20, 20, 14, '#fcc48c');
-    // eyes (whites + pupils)
-    box(-6, -16, 4, 6, '#ffffff');
-    box(2, -16, 4, 6, '#ffffff');
-    box(-4, -14, 2, 4, '#000000');
-    box(4, -14, 2, 4, '#000000');
-    // nose
-    box(-2, -10, 6, 4, '#fcc48c');
-    box(-2, -8, 6, 2, '#e89060');
-    // mustache
-    box(-8, -8, 16, 3, '#3a1c00');
-    box(-10, -7, 4, 2, '#3a1c00');
-    box(6, -7, 4, 2, '#3a1c00');
-    // neck
-    box(-6, -6, 12, 2, '#fcc48c');
-    // shirt (red sleeves visible at shoulders)
-    box(-14, -4, 6, 12, '#e40000');
-    box(8, -4, 6, 12, '#e40000');
-    // overalls (blue torso)
-    box(-8, -4, 16, 14, '#0058f8');
-    // strap separators
-    box(-6, -4, 2, 10, '#003cbf');
-    box(4, -4, 2, 10, '#003cbf');
-    // overall buttons
-    box(-5, 0, 3, 3, '#fcd000');
-    box(2, 0, 3, 3, '#fcd000');
-    // gloves — arms swing while running
+    box(-14, -22, 28, 2, cfg.capDark);
+    // hair / sideburns
+    box(-14, -22, 4, 8, cfg.hair);
+    box(10, -22, 4, 8, cfg.hair);
+    // face (peach)
+    box(-10, -22, 20, 16, '#fcc48c');
+    // big round eyes — whites
+    box(-7, -18, 5, 7, '#ffffff');
+    box(2, -18, 5, 7, '#ffffff');
+    // colored irises
+    box(-6, -16, 3, 4, cfg.eye);
+    box(3, -16, 3, 4, cfg.eye);
+    // dark pupils
+    box(-5, -15, 1, 2, '#000');
+    box(4, -15, 1, 2, '#000');
+    // shine glints
+    box(-4, -17, 1, 1, '#fff');
+    box(5, -17, 1, 1, '#fff');
+    // rosy cheeks
+    box(-10, -10, 3, 2, '#ff9aa8');
+    box(7, -10, 3, 2, '#ff9aa8');
+    // tiny round nose
+    box(-2, -10, 5, 3, '#fcc48c');
+    box(-2, -8, 5, 1, '#e89060');
+    box(-1, -9, 1, 1, '#ffe2c0'); // nose highlight
+    // friendly smile
+    box(-4, -5, 8, 2, '#3a1c00');
+    box(-5, -6, 1, 1, '#3a1c00');
+    box(4, -6, 1, 1, '#3a1c00');
+    // mustache sits just above the smile
+    box(-8, -7, 16, 2, cfg.mustache);
+    box(-10, -6, 3, 1, cfg.mustache);
+    box(7, -6, 3, 1, cfg.mustache);
+    // chin / neck
+    box(-5, -4, 10, 2, '#fcc48c');
+    // shirt sleeves (cap color)
+    box(-14, -2, 6, 12, cfg.cap);
+    box(8, -2, 6, 12, cfg.cap);
+    box(-14, -2, 6, 1, cfg.capLight);
+    box(8, -2, 6, 1, cfg.capLight);
+    // blue overalls
+    box(-8, -2, 16, 14, '#0058f8');
+    box(-8, -2, 16, 1, '#3078ff');
+    // overall straps
+    box(-6, -2, 2, 10, '#003cbf');
+    box(4, -2, 2, 10, '#003cbf');
+    // yellow buttons
+    box(-5, 2, 3, 3, '#fcd000');
+    box(-4, 2, 1, 1, '#fff'); // button shine
+    box(2, 2, 3, 3, '#fcd000');
+    box(3, 2, 1, 1, '#fff');
+    // gloves (arms swing)
     const armA = stride === 0 ? 0 : -3;
     const armB = stride === 0 ? -3 : 0;
     box(-16, 8 + armA, 6, 4, '#ffffff');
     box(10, 8 + armB, 6, 4, '#ffffff');
-    // shoes — legs alternate forward/back
+    box(-16, 8 + armA, 6, 1, '#ffffff');
+    // shoes
     if (stride === 0) {
-      box(-12, 10, 10, 6, '#6e2800');
-      box(4, 10, 10, 6, '#6e2800');
-      box(-12, 10, 10, 1, '#a86020');
-      box(4, 10, 10, 1, '#a86020');
+      box(-12, 12, 10, 6, cfg.hair);
+      box(4, 12, 10, 6, cfg.hair);
+      box(-12, 12, 10, 1, cfg.shoeLight);
+      box(4, 12, 10, 1, cfg.shoeLight);
     } else {
-      box(-14, 10, 10, 6, '#6e2800');
-      box(2, 10, 10, 6, '#6e2800');
-      box(-14, 10, 10, 1, '#a86020');
-      box(2, 10, 10, 1, '#a86020');
+      box(-14, 12, 10, 6, cfg.hair);
+      box(2, 12, 10, 6, cfg.hair);
+      box(-14, 12, 10, 1, cfg.shoeLight);
+      box(2, 12, 10, 1, cfg.shoeLight);
     }
     c.restore();
+  }
+
+  function drawMario(c, cx, cy, scale = 1, flipX = false, stride = 0) {
+    drawPlumber(c, cx, cy, scale, flipX, stride, {
+      cap: '#e40000', capLight: '#ff6868', capDark: '#a00000',
+      hair: '#6e2800', mustache: '#3a1c00',
+      eye: '#2f50c8', shoeLight: '#a86020',
+      emblem: 'M',
+    });
+  }
+
+  function drawLuigi(c, cx, cy, scale = 1, flipX = false, stride = 0) {
+    drawPlumber(c, cx, cy, scale, flipX, stride, {
+      cap: '#00a800', capLight: '#80e060', capDark: '#004400',
+      hair: '#3a1c00', mustache: '#2a1000',
+      eye: '#308040', shoeLight: '#5a3010',
+      emblem: 'L',
+    });
+  }
+
+  // Princess Peach — crown, flowing blonde hair, pink gown. Slightly taller
+  // silhouette than the plumbers; skirt hem hides her legs so "stride"
+  // just tilts the hem left/right for a gentle skip.
+  function drawPrincess(c, cx, cy, scale = 1, flipX = false, stride = 0) {
+    const S = scale;
+    c.save();
+    c.translate(cx, cy);
+    if (flipX) c.scale(-1, 1);
+    const box = (x, y, w, h, color) => { c.fillStyle = color; c.fillRect(x * S, y * S, w * S, h * S); };
+
+    // crown — golden zigzag
+    box(-7, -34, 14, 3, '#fcd000');
+    box(-7, -36, 2, 2, '#fcd000');
+    box(-1, -37, 2, 3, '#fcd000');
+    box(5, -36, 2, 2, '#fcd000');
+    // crown gems
+    box(-1, -35, 2, 2, '#ff3060');
+    box(-5, -33, 1, 1, '#40b0ff');
+    box(4, -33, 1, 1, '#40b0ff');
+    // crown shadow / band
+    box(-7, -31, 14, 1, '#a06000');
+
+    // blonde hair — top + long side locks
+    box(-10, -30, 20, 4, '#fce078');
+    box(-12, -28, 24, 4, '#fce078');
+    // hair highlights
+    box(-9, -30, 6, 1, '#fff6b8');
+    box(3, -30, 5, 1, '#fff6b8');
+    // flowing side locks down past the jaw
+    box(-14, -26, 4, 16, '#fce078');
+    box(10, -26, 4, 16, '#fce078');
+    box(-14, -10, 3, 4, '#fce078'); // curl tip
+    box(11, -10, 3, 4, '#fce078');
+    // bangs
+    box(-10, -26, 20, 3, '#fce078');
+    box(-2, -26, 1, 5, '#fce078'); // center widow's-peak
+    // hair shadow under bangs
+    box(-10, -23, 20, 1, '#d8b040');
+
+    // face
+    box(-10, -22, 20, 14, '#ffd8b0');
+    // big shiny eyes
+    box(-7, -18, 5, 7, '#ffffff');
+    box(2, -18, 5, 7, '#ffffff');
+    box(-6, -16, 3, 4, '#1e60d0');
+    box(3, -16, 3, 4, '#1e60d0');
+    box(-5, -15, 1, 2, '#000');
+    box(4, -15, 1, 2, '#000');
+    box(-4, -17, 1, 1, '#fff');
+    box(5, -17, 1, 1, '#fff');
+    // long lashes
+    box(-8, -18, 1, 1, '#3a1c00');
+    box(-2, -18, 1, 1, '#3a1c00');
+    box(1, -18, 1, 1, '#3a1c00');
+    box(7, -18, 1, 1, '#3a1c00');
+    // rosy cheeks
+    box(-10, -10, 3, 2, '#ff8fb0');
+    box(7, -10, 3, 2, '#ff8fb0');
+    // button nose
+    box(-1, -10, 3, 2, '#ffd8b0');
+    box(0, -9, 1, 1, '#e08080');
+    // sweet smile
+    box(-3, -6, 6, 1, '#cc3060');
+    box(-4, -7, 1, 1, '#cc3060');
+    box(3, -7, 1, 1, '#cc3060');
+    box(-3, -5, 6, 1, '#ffb0c8'); // lipstick sheen
+    // earrings
+    box(-13, -14, 2, 2, '#40b0ff');
+    box(11, -14, 2, 2, '#40b0ff');
+
+    // neck
+    box(-3, -8, 6, 2, '#ffd8b0');
+
+    // pink gown — fitted bodice
+    box(-8, -6, 16, 6, '#ff8fc8');
+    box(-8, -6, 16, 1, '#ffb8dc');
+    // gem brooch
+    box(-1, -2, 2, 2, '#fcd000');
+    // puffy shoulders
+    box(-12, -5, 5, 5, '#ff8fc8');
+    box(7, -5, 5, 5, '#ff8fc8');
+    // white gloves at the cuffs, with puff
+    box(-14, 0, 4, 5, '#ffffff');
+    box(10, 0, 4, 5, '#ffffff');
+    box(-15, 4, 6, 5, '#ffffff');
+    box(9, 4, 6, 5, '#ffffff');
+    // bracelets
+    box(-15, 3, 6, 1, '#fcd000');
+    box(9, 3, 6, 1, '#fcd000');
+
+    // flared skirt — widens as it descends. Stride tilts the hem slightly so
+    // the dress looks like it's swaying with a skip.
+    const sway = stride === 0 ? -1 : 1;
+    box(-9, 0, 18, 4, '#ff8fc8');
+    box(-11, 4, 22, 4, '#ff8fc8');
+    box(-13 + sway, 8, 26, 4, '#ff8fc8');
+    box(-15 + sway, 12, 30, 4, '#ff8fc8');
+    // skirt shading
+    box(-15 + sway, 12, 30, 1, '#ffbde0');
+    box(-15 + sway, 15, 30, 1, '#d8508a');
+    // tiny heels peeking out
+    box(-6, 16, 4, 2, '#ff3060');
+    box(2, 16, 4, 2, '#ff3060');
+    c.restore();
+  }
+
+  function drawCelebrationCharacter(name, c, cx, cy, scale, flipX, stride) {
+    if (name === 'luigi') drawLuigi(c, cx, cy, scale, flipX, stride);
+    else if (name === 'princess') drawPrincess(c, cx, cy, scale, flipX, stride);
+    else drawMario(c, cx, cy, scale, flipX, stride);
   }
 
   // Spray-paint style celebration tags scattered across the scene. Each tag
@@ -882,9 +1059,14 @@
       }
     }
 
-    drawMario(mctx, marioX, marioY, scale, flip, stride);
+    drawCelebrationCharacter(celebrationChar, mctx, marioX, marioY, scale, flip, stride);
 
-    // Bouncing "TETRIS!" banner anchored above Mario's current position.
+    // Bouncing banner anchored above the character — catchphrase varies per
+    // guest star.
+    const catchphrase =
+      celebrationChar === 'luigi' ? "MAMMA LUIGI!" :
+      celebrationChar === 'princess' ? "THANK YOU!" :
+      "LET'S-A GO!";
     const flashOn = Math.floor(elapsed / 120) % 2 === 0;
     const bannerY = Math.max(40, marioY - 100);
     mctx.save();
@@ -899,10 +1081,10 @@
     mctx.font = `bold 11px 'Press Start 2P', monospace`;
     mctx.fillStyle = '#000';
     for (const [dx, dy] of [[-2, 0], [2, 0], [0, -2], [0, 2]]) {
-      mctx.fillText("LET'S-A GO!", marioX + dx, bannerY + 26 + dy);
+      mctx.fillText(catchphrase, marioX + dx, bannerY + 26 + dy);
     }
     mctx.fillStyle = '#ffffff';
-    mctx.fillText("LET'S-A GO!", marioX, bannerY + 26);
+    mctx.fillText(catchphrase, marioX, bannerY + 26);
     mctx.restore();
   }
 
