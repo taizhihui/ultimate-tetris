@@ -11,6 +11,7 @@
   let musicStartTime = 0;
   let playing = false;
   let gameRunning = false; // whether the caller considers the game active
+  let fanfareTimeout = null;
 
   // Frequencies (Hz) for a small chromatic set, keyed by note + octave.
   const N = (() => {
@@ -27,8 +28,9 @@
   })();
 
   // 16th-note grid. Each entry is [melodyNote, bassNote]. REST = silence.
-  // Loops forever. Roughly 4 bars of upbeat C-major chiptune.
-  const TEMPO_BPM = 140;
+  // Loops forever. Roughly 4 bars of Mario-style overworld chiptune at a
+  // relaxed walking pace.
+  const TEMPO_BPM = 100;
   const STEP_SEC = 60 / TEMPO_BPM / 4; // 16th note
   const PATTERN = [
     ['C5', 'C3'], ['E5', 'REST'], ['G5', 'G3'], ['E5', 'REST'],
@@ -168,6 +170,16 @@
     if (!ensureContext()) return;
     if (ctx.state === 'suspended') ctx.resume();
     const start = ctx.currentTime + 0.02;
+
+    // Duck the looping background music so the fanfare stands alone, then
+    // restart it once the fanfare finishes (if still appropriate).
+    if (fanfareTimeout) { clearTimeout(fanfareTimeout); fanfareTimeout = null; }
+    haltMusic();
+    const FANFARE_MS = 3500;
+    fanfareTimeout = setTimeout(() => {
+      fanfareTimeout = null;
+      if (musicEnabled && gameRunning) startMusic();
+    }, FANFARE_MS);
 
     // Melody — soaring triadic ascent, answered by a descending flourish,
     // then a final lifted cadence that hangs on the tonic.
