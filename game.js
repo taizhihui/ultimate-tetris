@@ -661,8 +661,10 @@
         let cleared = 0;
         for (let r = ROWS - 1; r >= 0 && cleared < 3; r--) {
           if (grid[r].some(cell => cell !== null)) {
-            grid[r] = Array(COLS).fill(null);
+            grid.splice(r, 1);
+            grid.unshift(Array(COLS).fill(null));
             cleared++;
+            r++; // re-check same index after splice
           }
         }
       }
@@ -703,8 +705,10 @@
     let cleared = 0;
     for (let r = ROWS - 1; r >= 0 && cleared < 2; r--) {
       if (grid[r].some(cell => cell !== null)) {
-        grid[r] = Array(COLS).fill(null);
+        grid.splice(r, 1);
+        grid.unshift(Array(COLS).fill(null));
         cleared++;
+        r++;
       }
     }
     score += Math.round(2000 * level * cfg.scoreMult);
@@ -1495,7 +1499,8 @@
         if (goomba !== null) {
           goomba.x += delta * (COLS + 3) / 2500;
           if (goomba.x >= COLS + 1) {
-            grid[goomba.row] = Array(COLS).fill(null);
+            grid.splice(goomba.row, 1);
+            grid.unshift(Array(COLS).fill(null));
             const cfg = DIFFICULTIES[difficulty];
             score += Math.round(200 * level * cfg.scoreMult);
             updateHud();
