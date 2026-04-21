@@ -129,8 +129,7 @@
   let celebrationCharIndex = 0;
   let celebrationChar = 'mario';
 
-  // --- Starman power-up state ---
-  let starmanTimer = 0;
+  // --- Starman piece state ---
   let starmanHue = 0;
 
   // --- Mystery piece state ---
@@ -353,12 +352,9 @@
     if (wasStarman) {
       const targetRow = starmanLandingRow(current.x);
       if (targetRow < 0) {
-        // Column completely full — skip placement, still grant the power-up.
+        // Column completely full — skip placement.
         current = null;
-        starmanTimer = 5000;
-        bonusPopupText = '\u2605 STAR POWER! \u2605';
-        bonusPopupTimer = 2000;
-        window.GameAudio && GameAudio.victoryFanfare();
+        window.GameAudio && GameAudio.sfxLock && GameAudio.sfxLock();
         spawn();
         updateHud();
         return;
@@ -368,13 +364,6 @@
 
     merge(current);
     current = null;
-
-    // Starman power-up: activate star mode
-    if (wasStarman) {
-      starmanTimer = 5000;
-      bonusPopupText = '\u2605 STAR POWER! \u2605';
-      bonusPopupTimer = 2000;
-    }
 
     const full = [];
     for (let r = 0; r < ROWS; r++) {
@@ -534,7 +523,6 @@
     next = null;
     current = null;
     // Starman reset
-    starmanTimer = 0;
     starmanHue = 0;
     // Mystery reset
     pendingMystery = false;
@@ -999,6 +987,7 @@
       }
       // Starman rainbow flash while starman piece is falling
       if (current.isStarman) {
+        starmanHue = (starmanHue + 4) % 360;
         ctx.save();
         ctx.globalAlpha = 0.7;
         ctx.fillStyle = `hsl(${starmanHue}, 100%, 60%)`;
@@ -1028,15 +1017,6 @@
       }
     }
 
-    // Starman rainbow overlay (active mode)
-    if (starmanTimer > 0) {
-      ctx.save();
-      ctx.globalAlpha = 0.12 + Math.sin(Date.now() / 80) * 0.05;
-      ctx.fillStyle = `hsl(${starmanHue}, 100%, 60%)`;
-      ctx.fillRect(0, 0, boardCanvas.width, boardCanvas.height);
-      ctx.restore();
-      starmanHue = (starmanHue + 4) % 360;
-    }
 
     // Bonus popup text
     if (bonusPopupTimer > 0 && bonusPopupText) {
@@ -1503,7 +1483,6 @@
     if (running && !paused) {
       if (celebrationTimer > 0) celebrationTimer = Math.max(0, celebrationTimer - delta);
       if (peachCelebTimer > 0) peachCelebTimer = Math.max(0, peachCelebTimer - delta);
-      if (starmanTimer > 0) starmanTimer = Math.max(0, starmanTimer - delta);
       if (bonusPopupTimer > 0) bonusPopupTimer -= delta;
 
       // Goomba sweep countdown
@@ -1527,8 +1506,6 @@
         }
       }
 
-      const effectiveDropInterval = starmanTimer > 0 ? 60 : dropInterval;
-
       if (lineClearTimer > 0) {
         lineClearTimer -= delta;
         if (lineClearTimer <= 0) {
@@ -1539,7 +1516,7 @@
         dropCounter = 0;
       } else {
         dropCounter += delta;
-        if (dropCounter > effectiveDropInterval) {
+        if (dropCounter > dropInterval) {
           if (current) {
             const check = current.isStarman ? boundsCollides : collides;
             if (!check(current.shape, current.x, current.y + 1)) {
