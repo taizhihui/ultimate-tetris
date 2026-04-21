@@ -31,6 +31,7 @@
   const overlaySub = document.getElementById('overlay-sub');
   const startOverlay = document.getElementById('start-overlay');
   const boardFrame = document.querySelector('.board-frame');
+  const peachBarEl = document.getElementById('peach-bar');
 
   const DIFFICULTIES = {
     easy:   { label: 'EASY',   startSpeed: 1000, speedup: 50, minSpeed: 220, scoreMult: 1.0, linesPerLevel: 10 },
@@ -127,6 +128,28 @@
   const CELEBRATION_CHARS = ['mario', 'princess', 'luigi'];
   let celebrationCharIndex = 0;
   let celebrationChar = 'mario';
+
+  // --- Starman power-up state ---
+  let starmanTimer = 0;
+  let starmanHue = 0;
+
+  // --- Mystery piece state ---
+  let pendingMystery = false;
+
+  // --- Goomba row sweeper state ---
+  let goomba = null;
+  let goombaSweepTimer = 0;
+  const goombaSweepInterval = { easy: 45000, medium: 60000, hard: 80000, insane: 100000 };
+
+  // --- Princess Peach rescue meter state ---
+  let peachProgress = 0;
+  let peachGoal = 12;
+  let peachCelebTimer = 0;
+  const PEACH_CELEB_MS = 2500;
+
+  // --- Shared bonus popup state ---
+  let bonusPopupTimer = 0;
+  let bonusPopupText = '';
   let graffitiTags = [];
   const GRAFFITI_WORDS = ['TETRIS!', 'SUPER!', 'BRAVO!', 'WOW!', 'AMAZING!', '4 LINES!', 'PRINCESS!', 'LEGEND!', 'MAMMA MIA!', 'LEVEL UP!'];
   const GRAFFITI_COLORS = ['#ff4da6', '#80ff00', '#00e5ff', '#fcd000', '#ff8c00', '#ff66ff', '#ffffff', '#ff3030'];
@@ -168,7 +191,18 @@
     return Array.from({ length: ROWS }, () => Array(COLS).fill(null));
   }
 
+  function makeStarmanPiece() {
+    return { type: 'STAR', texture: 'star', shape: [[1]], x: Math.floor(COLS / 2), y: 0, isStarman: true };
+  }
+
   function randomPiece() {
+    const roll = Math.random();
+    if (roll < 0.05) {
+      return makeStarmanPiece();
+    }
+    if (roll < 0.05 + 0.07) {
+      return { type: 'MYSTERY', texture: 'question', shape: [[1,1],[1,1]], x: Math.floor((COLS - 2) / 2), y: 0, isMystery: true };
+    }
     const key = PIECE_KEYS[Math.floor(Math.random() * PIECE_KEYS.length)];
     const piece = PIECES[key];
     return {
@@ -287,8 +321,19 @@
   }
 
   function lockPiece() {
+    // Capture special flags BEFORE current is nulled
+    const wasStarman = current && current.isStarman;
+    const wasMystery = current && current.isMystery;
+
     merge(current);
     current = null;
+
+    // Starman power-up: activate star mode
+    if (wasStarman) {
+      starmanTimer = 5000;
+      bonusPopupText = '\u2605 STAR POWER! \u2605';
+      bonusPopupTimer = 2000;
+    }
 
     const full = [];
     for (let r = 0; r < ROWS; r++) {
@@ -321,22 +366,32 @@
         // Reward the player: the next piece gets a power-up skin (star or mushroom).
         if (next) next.texture = Math.random() < 0.5 ? 'star' : 'mushroom';
       }
+      // If mystery piece caused line clears, defer trigger until finishLineClears
+      if (wasMystery) pendingMystery = true;
     } else {
       window.GameAudio && GameAudio.sfxLock();
       spawn();
+      if (wasMystery) triggerMystery();
     }
     updateHud();
   }
 
   function finishLineClears() {
     clearingRows.sort((a, b) => a - b);
+    // Capture count BEFORE clearing clearingRows = []
+    const clearedCount = clearingRows.length;
     for (const r of clearingRows) {
       grid.splice(r, 1);
       grid.unshift(Array(COLS).fill(null));
     }
     clearingRows = [];
     boardFrame.classList.remove('flashing');
+    updatePeachProgress(clearedCount);
     spawn();
+    if (pendingMystery) {
+      pendingMystery = false;
+      triggerMystery();
+    }
   }
 
   function spawn() {
@@ -437,6 +492,22 @@
     gameOver = false;
     next = null;
     current = null;
+    // Starman reset
+    starmanTimer = 0;
+    starmanHue = 0;
+    // Mystery reset
+    pendingMystery = false;
+    // Goomba reset
+    goomba = null;
+    goombaSweepTimer = goombaSweepInterval[difficulty] || 60000;
+    // Peach reset
+    peachProgress = 0;
+    peachGoal = { easy: 8, medium: 12, hard: 16, insane: 22 }[difficulty] || 12;
+    peachCelebTimer = 0;
+    if (peachBarEl) peachBarEl.style.width = '0%';
+    // Popup reset
+    bonusPopupTimer = 0;
+    bonusPopupText = '';
     overlay.classList.add('hidden');
     spawn();
     updateHud();
@@ -490,6 +561,128 @@
     livesEl.textContent = String(lives);
     if (diffEl) diffEl.textContent = DIFFICULTIES[difficulty].label;
     if (bestEl) bestEl.textContent = String(Math.max(getBestForDifficulty(difficulty), score)).padStart(6, '0');
+  }
+
+  // ---- Goomba Row Sweeper helpers ----
+
+  function tryStartGoomba() {
+    if (goomba !== null) return; // already active
+    const candidates = [];
+    const halfRow = Math.floor(ROWS / 2);
+    for (let r = halfRow; r < ROWS; r++) {
+      if (grid[r].some(cell => cell !== null)) candidates.push(r);
+    }
+    if (!candidates.length) return;
+    const row = candidates[Math.floor(Math.random() * candidates.length)];
+    goomba = { row, x: -1 };
+  }
+
+  function drawGoomba() {
+    if (!goomba) return;
+    const x = goomba.x * CELL;
+    const y = goomba.row * CELL;
+    const S = CELL;
+    const step = Math.floor(Math.abs(goomba.x) * 3) % 2;
+    ctx.save();
+    // Brown body
+    ctx.fillStyle = '#8B4513';
+    ctx.fillRect(x + S * 0.1, y + S * 0.45, S * 0.8, S * 0.5);
+    // Round head (arc)
+    ctx.fillStyle = '#8B4513';
+    ctx.beginPath();
+    ctx.arc(x + S * 0.5, y + S * 0.4, S * 0.38, 0, Math.PI * 2);
+    ctx.fill();
+    // Tan face
+    ctx.fillStyle = '#D2A679';
+    ctx.beginPath();
+    ctx.arc(x + S * 0.5, y + S * 0.44, S * 0.26, 0, Math.PI * 2);
+    ctx.fill();
+    // White eyes
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(x + S * 0.25, y + S * 0.28, S * 0.18, S * 0.16);
+    ctx.fillRect(x + S * 0.57, y + S * 0.28, S * 0.18, S * 0.16);
+    // Black pupils
+    ctx.fillStyle = '#000';
+    ctx.fillRect(x + S * 0.28, y + S * 0.31, S * 0.1, S * 0.1);
+    ctx.fillRect(x + S * 0.60, y + S * 0.31, S * 0.1, S * 0.1);
+    // Angry brows (filled rects, angled look)
+    ctx.fillStyle = '#000';
+    ctx.fillRect(x + S * 0.22, y + S * 0.22, S * 0.22, S * 0.06);
+    ctx.fillRect(x + S * 0.56, y + S * 0.22, S * 0.22, S * 0.06);
+    // Feet (alternating based on step)
+    ctx.fillStyle = '#5C2A00';
+    if (step === 0) {
+      ctx.fillRect(x + S * 0.1, y + S * 0.88, S * 0.32, S * 0.12);
+      ctx.fillRect(x + S * 0.55, y + S * 0.82, S * 0.32, S * 0.12);
+    } else {
+      ctx.fillRect(x + S * 0.1, y + S * 0.82, S * 0.32, S * 0.12);
+      ctx.fillRect(x + S * 0.55, y + S * 0.88, S * 0.32, S * 0.12);
+    }
+    ctx.restore();
+  }
+
+  // ---- Mystery piece helpers ----
+
+  function triggerMystery() {
+    const cfg = DIFFICULTIES[difficulty];
+    const effect = Math.floor(Math.random() * 3);
+    if (effect === 0) {
+      // Clear the 3 lowest filled rows (only if no clearingRows in progress)
+      if (!clearingRows.length) {
+        let cleared = 0;
+        for (let r = ROWS - 1; r >= 0 && cleared < 3; r--) {
+          if (grid[r].some(cell => cell !== null)) {
+            grid[r] = Array(COLS).fill(null);
+            cleared++;
+          }
+        }
+      }
+      bonusPopupText = '3 ROWS CLEARED!';
+      bonusPopupTimer = 2000;
+    } else if (effect === 1) {
+      score += Math.round(1200 * level * cfg.scoreMult);
+      updateHud();
+      bonusPopupText = '+BONUS COINS!';
+      bonusPopupTimer = 2000;
+    } else {
+      next = makeStarmanPiece();
+      drawNext();
+      bonusPopupText = 'STARMAN INCOMING!';
+      bonusPopupTimer = 2000;
+    }
+    window.GameAudio && GameAudio.sfxLine && GameAudio.sfxLine();
+  }
+
+  // ---- Princess Peach helpers ----
+
+  function updatePeachProgress(cleared) {
+    if (!cleared) return;
+    peachProgress += cleared;
+    const pct = Math.min(100, Math.round((peachProgress / peachGoal) * 100));
+    if (peachBarEl) peachBarEl.style.width = pct + '%';
+    if (peachProgress >= peachGoal) {
+      peachProgress = 0;
+      if (peachBarEl) peachBarEl.style.width = '0%';
+      triggerPeachRescue();
+    }
+  }
+
+  function triggerPeachRescue() {
+    const cfg = DIFFICULTIES[difficulty];
+    peachCelebTimer = PEACH_CELEB_MS;
+    // Clear the 2 lowest filled rows
+    let cleared = 0;
+    for (let r = ROWS - 1; r >= 0 && cleared < 2; r--) {
+      if (grid[r].some(cell => cell !== null)) {
+        grid[r] = Array(COLS).fill(null);
+        cleared++;
+      }
+    }
+    score += Math.round(2000 * level * cfg.scoreMult);
+    updateHud();
+    bonusPopupText = '\u2665 PRINCESS RESCUED! \u2665';
+    bonusPopupTimer = PEACH_CELEB_MS;
+    window.GameAudio && GameAudio.victoryFanfare && GameAudio.victoryFanfare();
   }
 
   // ---- drawing ----
@@ -757,8 +950,71 @@
           }
         }
       }
+      // Starman rainbow flash while starman piece is falling
+      if (current.isStarman) {
+        ctx.save();
+        ctx.globalAlpha = 0.7;
+        ctx.fillStyle = `hsl(${starmanHue}, 100%, 60%)`;
+        for (let r = 0; r < current.shape.length; r++) {
+          for (let c = 0; c < current.shape[r].length; c++) {
+            if (current.shape[r][c]) {
+              ctx.fillRect((current.x + c) * CELL, (current.y + r) * CELL, CELL, CELL);
+            }
+          }
+        }
+        ctx.restore();
+      }
+      // Mystery piece pulsing yellow glow
+      if (current.isMystery) {
+        const pulse = 0.3 + Math.sin(Date.now() / 120) * 0.2;
+        ctx.save();
+        ctx.globalAlpha = pulse;
+        ctx.fillStyle = '#ffd700';
+        for (let r = 0; r < current.shape.length; r++) {
+          for (let c = 0; c < current.shape[r].length; c++) {
+            if (current.shape[r][c]) {
+              ctx.fillRect((current.x + c) * CELL, (current.y + r) * CELL, CELL, CELL);
+            }
+          }
+        }
+        ctx.restore();
+      }
     }
 
+    // Starman rainbow overlay (active mode)
+    if (starmanTimer > 0) {
+      ctx.save();
+      ctx.globalAlpha = 0.12 + Math.sin(Date.now() / 80) * 0.05;
+      ctx.fillStyle = `hsl(${starmanHue}, 100%, 60%)`;
+      ctx.fillRect(0, 0, boardCanvas.width, boardCanvas.height);
+      ctx.restore();
+      starmanHue = (starmanHue + 4) % 360;
+    }
+
+    // Bonus popup text
+    if (bonusPopupTimer > 0 && bonusPopupText) {
+      const alpha = Math.min(1, bonusPopupTimer / 400);
+      const bounceY = boardCanvas.height / 2 - Math.sin(Date.now() / 200) * 8;
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.font = "bold 11px 'Press Start 2P', monospace";
+      // black outline
+      ctx.fillStyle = '#000';
+      for (const [dx, dy] of [[-2, 0], [2, 0], [0, -2], [0, 2], [-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+        ctx.fillText(bonusPopupText, boardCanvas.width / 2 + dx, bounceY + dy);
+      }
+      // gold fill
+      ctx.fillStyle = '#fcd000';
+      ctx.fillText(bonusPopupText, boardCanvas.width / 2, bounceY);
+      ctx.restore();
+    }
+
+    // Goomba
+    if (goomba !== null) {
+      drawGoomba();
+    }
   }
 
   // Shared chibi plumber sprite (Mario / Luigi) — soft rounded cap, big shiny
@@ -1052,96 +1308,128 @@
   function drawCelebrationStage() {
     if (!mctx || !marioStage) return;
     mctx.clearRect(0, 0, marioStage.width, marioStage.height);
-    if (celebrationTimer <= 0) return;
+    if (celebrationTimer <= 0 && peachCelebTimer <= 0) return;
 
-    const elapsed = CELEBRATION_MS - celebrationTimer;
-    const progress = elapsed / CELEBRATION_MS;
     const W = marioStage.width;
     const H = marioStage.height;
-    const groundY = H - 90; // Mario's feet sit just above the ground strip
-    const scale = 2.8;
 
-    drawGraffiti(progress);
+    // Mario celebration (only when celebrationTimer is active)
+    if (celebrationTimer > 0) {
+      const elapsed = CELEBRATION_MS - celebrationTimer;
+      const progress = elapsed / CELEBRATION_MS;
+      const groundY = H - 90; // Mario's feet sit just above the ground strip
+      const scale = 2.8;
 
-    // Phases: run in (0-0.2), celebrate jumping (0.2-0.8), run out (0.8-1.0)
-    const RUN_IN_END = 0.2;
-    const CELEBRATE_END = 0.8;
+      drawGraffiti(progress);
 
-    // Pick a side to enter from based on which half of the screen has more room.
-    // Use the right half so Mario doesn't cut across the game panel every time;
-    // offscreen start / end anchor off the right edge.
-    const centerX = W * 0.78;
-    const offRight = W + 80;
-    const offLeft = -80;
+      // Phases: run in (0-0.2), celebrate jumping (0.2-0.8), run out (0.8-1.0)
+      const RUN_IN_END = 0.2;
+      const CELEBRATE_END = 0.8;
 
-    let marioX, marioY, flip, stride;
-    if (progress < RUN_IN_END) {
-      const p = progress / RUN_IN_END;
-      marioX = offRight + (centerX - offRight) * p;
-      marioY = groundY - Math.abs(Math.sin(p * Math.PI * 2)) * 6; // subtle run-bob
-      flip = true; // facing left (moving from right to left)
-      stride = Math.floor(p * 10) % 2;
-    } else if (progress < CELEBRATE_END) {
-      const p = (progress - RUN_IN_END) / (CELEBRATE_END - RUN_IN_END);
-      const bounces = 3;
-      marioX = centerX;
-      const jumpY = Math.abs(Math.sin(p * Math.PI * bounces)) * 80;
-      marioY = groundY - jumpY;
-      // alternate facing during jumps for flair
-      flip = Math.floor(p * bounces * 2) % 2 === 0;
-      stride = 0;
-    } else {
-      const p = (progress - CELEBRATE_END) / (1 - CELEBRATE_END);
-      marioX = centerX + (offLeft - centerX) * p;
-      marioY = groundY - Math.abs(Math.sin(p * Math.PI * 2)) * 6;
-      flip = true;
-      stride = Math.floor(p * 10) % 2;
-    }
+      // Pick a side to enter from based on which half of the screen has more room.
+      // Use the right half so Mario doesn't cut across the game panel every time;
+      // offscreen start / end anchor off the right edge.
+      const centerX = W * 0.78;
+      const offRight = W + 80;
+      const offLeft = -80;
 
-    // Coin shower orbiting Mario during the celebrate phase.
-    if (progress >= RUN_IN_END && progress < CELEBRATE_END) {
-      const t = elapsed / 1000;
-      for (let i = 0; i < 8; i++) {
-        const ang = t * 3 + (i / 8) * Math.PI * 2;
-        const radius = 130 + Math.sin(t * 4 + i) * 22;
-        const x = centerX + Math.cos(ang) * radius;
-        const y = groundY - 80 + Math.sin(ang) * radius * 0.55;
-        mctx.fillStyle = '#fcd000';
-        mctx.beginPath();
-        mctx.arc(x, y, 10, 0, Math.PI * 2);
-        mctx.fill();
-        mctx.fillStyle = '#a06000';
-        mctx.fillRect(x - 2, y - 4, 3, 8);
+      let marioX, marioY, flip, stride;
+      if (progress < RUN_IN_END) {
+        const p = progress / RUN_IN_END;
+        marioX = offRight + (centerX - offRight) * p;
+        marioY = groundY - Math.abs(Math.sin(p * Math.PI * 2)) * 6; // subtle run-bob
+        flip = true; // facing left (moving from right to left)
+        stride = Math.floor(p * 10) % 2;
+      } else if (progress < CELEBRATE_END) {
+        const p = (progress - RUN_IN_END) / (CELEBRATE_END - RUN_IN_END);
+        const bounces = 3;
+        marioX = centerX;
+        const jumpY = Math.abs(Math.sin(p * Math.PI * bounces)) * 80;
+        marioY = groundY - jumpY;
+        // alternate facing during jumps for flair
+        flip = Math.floor(p * bounces * 2) % 2 === 0;
+        stride = 0;
+      } else {
+        const p = (progress - CELEBRATE_END) / (1 - CELEBRATE_END);
+        marioX = centerX + (offLeft - centerX) * p;
+        marioY = groundY - Math.abs(Math.sin(p * Math.PI * 2)) * 6;
+        flip = true;
+        stride = Math.floor(p * 10) % 2;
       }
+
+      // Coin shower orbiting Mario during the celebrate phase.
+      if (progress >= RUN_IN_END && progress < CELEBRATE_END) {
+        const t = elapsed / 1000;
+        for (let i = 0; i < 8; i++) {
+          const ang = t * 3 + (i / 8) * Math.PI * 2;
+          const radius = 130 + Math.sin(t * 4 + i) * 22;
+          const x = centerX + Math.cos(ang) * radius;
+          const y = groundY - 80 + Math.sin(ang) * radius * 0.55;
+          mctx.fillStyle = '#fcd000';
+          mctx.beginPath();
+          mctx.arc(x, y, 10, 0, Math.PI * 2);
+          mctx.fill();
+          mctx.fillStyle = '#a06000';
+          mctx.fillRect(x - 2, y - 4, 3, 8);
+        }
+      }
+
+      drawCelebrationCharacter(celebrationChar, mctx, marioX, marioY, scale, flip, stride);
+
+      // Bouncing banner — catchphrase varies per guest star.
+      const catchphrase =
+        celebrationChar === 'luigi' ? "MAMMA LUIGI!" :
+        celebrationChar === 'princess' ? "THANK YOU!" :
+        "LET'S-A GO!";
+      const flashOn = Math.floor(elapsed / 120) % 2 === 0;
+      const bannerY = Math.max(40, marioY - 100);
+      mctx.save();
+      mctx.textAlign = 'center';
+      mctx.font = `bold 28px 'Press Start 2P', monospace`;
+      mctx.fillStyle = '#000';
+      for (const [dx, dy] of [[-3, 0], [3, 0], [0, -3], [0, 3], [-2, -2], [2, -2], [-2, 2], [2, 2]]) {
+        mctx.fillText('TETRIS!', marioX + dx, bannerY + dy);
+      }
+      mctx.fillStyle = flashOn ? '#fcd000' : '#ffffff';
+      mctx.fillText('TETRIS!', marioX, bannerY);
+      mctx.font = `bold 11px 'Press Start 2P', monospace`;
+      mctx.fillStyle = '#000';
+      for (const [dx, dy] of [[-2, 0], [2, 0], [0, -2], [0, 2]]) {
+        mctx.fillText(catchphrase, marioX + dx, bannerY + 26 + dy);
+      }
+      mctx.fillStyle = '#ffffff';
+      mctx.fillText(catchphrase, marioX, bannerY + 26);
+      mctx.restore();
     }
 
-    drawCelebrationCharacter(celebrationChar, mctx, marioX, marioY, scale, flip, stride);
-
-    // Bouncing banner anchored above the character — catchphrase varies per
-    // guest star.
-    const catchphrase =
-      celebrationChar === 'luigi' ? "MAMMA LUIGI!" :
-      celebrationChar === 'princess' ? "THANK YOU!" :
-      "LET'S-A GO!";
-    const flashOn = Math.floor(elapsed / 120) % 2 === 0;
-    const bannerY = Math.max(40, marioY - 100);
-    mctx.save();
-    mctx.textAlign = 'center';
-    mctx.font = `bold 28px 'Press Start 2P', monospace`;
-    mctx.fillStyle = '#000';
-    for (const [dx, dy] of [[-3, 0], [3, 0], [0, -3], [0, 3], [-2, -2], [2, -2], [-2, 2], [2, 2]]) {
-      mctx.fillText('TETRIS!', marioX + dx, bannerY + dy);
+    // Peach rescue celebration
+    if (peachCelebTimer > 0) {
+      const peachProgress2 = 1 - peachCelebTimer / PEACH_CELEB_MS;
+      const fadeAlpha = peachCelebTimer < 500 ? peachCelebTimer / 500 : Math.min(1, peachProgress2 / 0.15);
+      const peachX = W * 0.22;
+      const peachBaseY = H * 0.38;
+      const bounce = Math.sin(Date.now() / 180) * 12;
+      mctx.save();
+      mctx.globalAlpha = Math.max(0, Math.min(1, fadeAlpha));
+      mctx.textAlign = 'center';
+      mctx.textBaseline = 'middle';
+      mctx.font = `bold 13px 'Press Start 2P', monospace`;
+      mctx.fillStyle = '#000';
+      for (const [dx, dy] of [[-2, 0], [2, 0], [0, -2], [0, 2]]) {
+        mctx.fillText('\u2665 PRINCESS RESCUED! \u2665', peachX + dx, peachBaseY + bounce + dy);
+      }
+      mctx.fillStyle = '#ff69b4';
+      mctx.fillText('\u2665 PRINCESS RESCUED! \u2665', peachX, peachBaseY + bounce);
+      const t2 = (PEACH_CELEB_MS - peachCelebTimer) / 1000;
+      for (let i = 0; i < 8; i++) {
+        const hx = peachX + Math.sin(t2 * 1.5 + i * 0.8) * 60 + (i - 4) * 18;
+        const hy = peachBaseY + 30 - t2 * 60 + Math.sin(t2 * 2 + i) * 10;
+        mctx.font = '18px serif';
+        mctx.globalAlpha = Math.max(0, Math.min(1, fadeAlpha)) * (1 - Math.min(1, t2 / 2));
+        mctx.fillText('\u2665', hx, hy);
+      }
+      mctx.restore();
     }
-    mctx.fillStyle = flashOn ? '#fcd000' : '#ffffff';
-    mctx.fillText('TETRIS!', marioX, bannerY);
-    mctx.font = `bold 11px 'Press Start 2P', monospace`;
-    mctx.fillStyle = '#000';
-    for (const [dx, dy] of [[-2, 0], [2, 0], [0, -2], [0, 2]]) {
-      mctx.fillText(catchphrase, marioX + dx, bannerY + 26 + dy);
-    }
-    mctx.fillStyle = '#ffffff';
-    mctx.fillText(catchphrase, marioX, bannerY + 26);
-    mctx.restore();
   }
 
   function drawNext() {
@@ -1167,6 +1455,33 @@
 
     if (running && !paused) {
       if (celebrationTimer > 0) celebrationTimer = Math.max(0, celebrationTimer - delta);
+      if (peachCelebTimer > 0) peachCelebTimer = Math.max(0, peachCelebTimer - delta);
+      if (starmanTimer > 0) starmanTimer = Math.max(0, starmanTimer - delta);
+      if (bonusPopupTimer > 0) bonusPopupTimer -= delta;
+
+      // Goomba sweep countdown
+      if (!gameOver) {
+        goombaSweepTimer -= delta;
+        if (goombaSweepTimer <= 0) {
+          tryStartGoomba();
+          goombaSweepTimer = (goombaSweepInterval[difficulty] || 60000) + Math.random() * 15000;
+        }
+        if (goomba !== null) {
+          goomba.x += delta * (COLS + 3) / 2500;
+          if (goomba.x >= COLS + 1) {
+            grid[goomba.row] = Array(COLS).fill(null);
+            const cfg = DIFFICULTIES[difficulty];
+            score += Math.round(200 * level * cfg.scoreMult);
+            updateHud();
+            window.GameAudio && GameAudio.sfxLine();
+            updatePeachProgress(1);
+            goomba = null;
+          }
+        }
+      }
+
+      const effectiveDropInterval = starmanTimer > 0 ? 60 : dropInterval;
+
       if (lineClearTimer > 0) {
         lineClearTimer -= delta;
         if (lineClearTimer <= 0) {
@@ -1177,7 +1492,7 @@
         dropCounter = 0;
       } else {
         dropCounter += delta;
-        if (dropCounter > dropInterval) {
+        if (dropCounter > effectiveDropInterval) {
           if (current) {
             if (!collides(current.shape, current.x, current.y + 1)) {
               current.y += 1;
